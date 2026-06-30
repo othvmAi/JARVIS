@@ -1,0 +1,67 @@
+{
+  "name": "JARVIS — Config Validator",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [$input.item];"
+      },
+      "id": "cv-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const required = [\n  'TELEGRAM_BOT_TOKEN',\n  'TELEGRAM_WEBHOOK_SECRET',\n  'OWNER_USER_ID',\n  'LLM_API_KEY',\n  'LLM_API_BASE',\n  'LLM_MODEL',\n  'GOOGLE_API_KEY',\n  'GOOGLE_ACCESS_TOKEN'\n];\n\nconst optional = [\n  'AUTH_MODE',\n  'RATE_LIMIT_PER_MINUTE',\n  'TELEGRAM_MAX_MESSAGE_LENGTH',\n  'LLM_PROVIDER',\n  'OLLAMA_API_BASE',\n  'OLLAMA_MODEL',\n  'OPENAI_API_KEY',\n  'OPENAI_API_BASE',\n  'OPENAI_MODEL',\n  'ANTHROPIC_API_KEY',\n  'ANTHROPIC_MODEL',\n  'MEMORY_PROVIDER',\n  'WOLFRAM_ALPHA_APPID',\n  'SERPAPI_API_KEY'\n];\n\nconst missing = required.filter(key => !$env[key]);\nconst present = required.filter(key => $env[key]);\n\nreturn [{ json: { valid: missing.length === 0, missing, present, optional: optional.filter(key => $env[key]) } }];"
+      },
+      "id": "cv-validate",
+      "name": "Validate Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "invalid", "leftValue": "={{ $json.valid }}", "rightValue": "false", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "cv-if-invalid",
+      "name": "Config Invalid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [820, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "throw new Error('Missing required environment variables: ' + $json.missing.join(', '));"
+      },
+      "id": "cv-throw",
+      "name": "Throw Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, config: { valid: true, env: Object.keys($env).reduce((acc, k) => { acc[k] = $env[k]; return acc; }, {}) } } }];"
+      },
+      "id": "cv-success",
+      "name": "Config Valid",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Validate Config", "type": "main", "index": 0}]]},
+    "Validate Config": {"main": [[{"node": "Config Invalid?", "type": "main", "index": 0}]]},
+    "Config Invalid?": {"main": [[{"node": "Throw Error", "type": "main", "index": 0}], [{"node": "Config Valid", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "config"]
+}

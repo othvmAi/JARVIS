@@ -1,0 +1,16 @@
+# Windows
+desktop.ini
+Thumbs.db
+
+# n8n
+node_modules/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

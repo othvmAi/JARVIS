@@ -1,0 +1,40 @@
+{
+  "name": "JARVIS — Intent Classifier",
+  "nodes": [
+    {
+      "parameters": {"jsCode": "return [$input.item];"},
+      "id": "ic-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — LLM Adapter"
+      },
+      "id": "ic-llm",
+      "name": "LLM Adapter",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = '';\ntry {\n  raw = $json.choices?.[0]?.message?.content || '{}';\n  raw = raw.replace(/```json|```/g, '').trim();\n} catch (e) {\n  raw = '{}';\n}\nlet decision;\ntry {\n  decision = JSON.parse(raw);\n} catch (e) {\n  decision = { intent: 'general_chat', confidence: 1.0, params: {} };\n}\nconst VALID_INTENTS = ['general_chat','drive_list','drive_search','drive_upload','drive_download','drive_delete','gmail_search','gmail_read','gmail_send','gmail_delete','calendar_list','calendar_create','calendar_delete','contacts_list','contacts_search','contacts_create','docs_create','docs_read','docs_edit','slides_create','sheets_read','sheets_write','sheets_create','tasks_list','tasks_create','tasks_update','tasks_delete','knowledge_query'];\nif (!VALID_INTENTS.includes(decision.intent)) {\n  decision.intent = 'general_chat';\n  decision.confidence = 0.5;\n}\nreturn [{ json: { ...$input.item.json, intent: decision.intent, intentConfidence: decision.confidence || 0, intentParams: decision.params || {} } }];"
+      },
+      "id": "ic-parse",
+      "name": "Parse Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "LLM Adapter", "type": "main", "index": 0}]]},
+    "LLM Adapter": {"main": [[{"node": "Parse Intent", "type": "main", "index": 0}]]}
+  ],
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "intent"]
+}

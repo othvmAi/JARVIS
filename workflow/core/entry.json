@@ -1,0 +1,142 @@
+{
+  "name": "JARVIS — Entry",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message", "callback_query"],
+        "additionalFields": {}
+      },
+      "id": "trigger-telegram",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [340, 200],
+      "webhookId": "jarvis-telegram",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis-webhook",
+        "responseMode": "responseNode"
+      },
+      "id": "trigger-webhook",
+      "name": "Website Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [340, 400],
+      "webhookId": "jarvis-webhook-site"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-entries",
+      "name": "Merge Entry Points",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $input.item.json;\nconst isTelegram = !!update.message;\nconst isWebsite = !!update.body;\n\nlet result;\nif (isTelegram) {\n  const msg = update.message || update.callback_query?.message;\n  const cbq = update.callback_query;\n  result = {\n    source: 'telegram',\n    userId: String(msg?.from?.id || 'unknown'),\n    sessionId: 'sess_' + String(msg?.chat?.id || '0') + '_' + Date.now(),\n    messageId: String(msg?.message_id || ''),\n    inputType: msg?.voice ? 'voice' : msg?.photo ? 'photo' : msg?.document ? 'document' : msg?.location ? 'location' : msg?.text ? 'text' : 'unknown',\n    inputText: msg?.text || msg?.caption || cbq?.data || '',\n    inputBinary: null,\n    metadata: {\n      chatId: String(msg?.chat?.id || ''),\n      replyEndpoint: null,\n      timestamp: new Date().toISOString(),\n      clientInfo: { firstName: msg?.from?.first_name, username: msg?.from?.username }\n    }\n  };\n} else if (isWebsite) {\n  const body = update.body || {};\n  result = {\n    source: 'website',\n    userId: 'default',\n    sessionId: body.session_id || 'sess_default_' + Date.now(),\n    messageId: body.message_id || '',\n    inputType: body.input_type || 'text',\n    inputText: body.text || body.message || '',\n    inputBinary: body.attachment || null,\n    metadata: {\n      chatId: null,\n      replyEndpoint: body.reply_url || null,\n      timestamp: new Date().toISOString(),\n      clientInfo: body.client_info || {}\n    }\n  };\n} else {\n  return [];\n}\n\nreturn [{ json: result }];"
+      },
+      "id": "normalize-request",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const OWNER_ID = String($env.OWNER_USER_ID || '');\nconst MODE = String($env.AUTH_MODE || 'open').toLowerCase();\nconst userId = String($json.userId || '');\n\nif ($env.TELEGRAM_WEBHOOK_SECRET) {\n  const trigger = $('Telegram Trigger').first();\n  const headers = trigger?.json?.headers || {};\n  const secret = headers['x-telegram-bot-api-secret-token'];\n  if (!secret || secret !== $env.TELEGRAM_WEBHOOK_SECRET) {\n    return [];\n  }\n}\n\nif (MODE === 'protected' && OWNER_ID && userId !== OWNER_ID) {\n  try {\n    await $helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage',\n      headers: { 'Content-Type': 'application/json' },\n      body: { chat_id: $json.metadata?.chatId, text: '\u26d4 Access denied.' },\n      timeout: 5000\n    });\n  } catch (e) {}\n  return [];\n}\n\nreturn [$input.item];"
+      },
+      "id": "auth-gate",
+      "name": "Auth Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = String($json.userId || 'default');\nconst limit = parseInt($env.RATE_LIMIT_PER_MINUTE || '30', 10);\nconst WINDOW = 60_000;\nconst now = Date.now();\n\nconst sd = $getWorkflowStaticData('global');\nsd.rl = sd.rl || {};\nconst bucket = sd.rl[userId] || (sd.rl[userId] = []);\nwhile (bucket.length && (now - bucket[0]) > WINDOW) bucket.shift();\n\nif (bucket.length >= limit) {\n  return [];\n}\nbucket.push(now);\nreturn [{ json: { ...$json, startTime: now } }];"
+      },
+      "id": "rate-limit",
+      "name": "Rate Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Intent Classifier"
+      },
+      "id": "intent-classifier",
+      "name": "Intent Classifier",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1540, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Capability Router"
+      },
+      "id": "capability-router",
+      "name": "Capability Router",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2020, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Response Sender"
+      },
+      "id": "response-sender",
+      "name": "Response Sender",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [2260, 100]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Memory Store",
+        "continueOnFail": true
+      },
+      "id": "memory-store",
+      "name": "Memory Store",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [2260, 300]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {"main": [[{"node": "Merge Entry Points", "type": "main", "index": 0}]]},
+    "Website Webhook": {"main": [[{"node": "Merge Entry Points", "type": "main", "index": 0}]]},
+    "Merge Entry Points": {"main": [[{"node": "Normalize Request", "type": "main", "index": 0}]]},
+    "Normalize Request": {"main": [[{"node": "Auth Gate", "type": "main", "index": 0}]]},
+    "Auth Gate": {"main": [[{"node": "Rate Limit", "type": "main", "index": 0}]]},
+    "Rate Limit": {"main": [[{"node": "Intent Classifier", "type": "main", "index": 0}]]},
+    "Intent Classifier": {"main": [[{"node": "Capability Router", "type": "main", "index": 0}]]},
+    "Capability Router": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]},
+    "Merge Results": {"main": [[{"node": "Response Sender", "type": "main", "index": 0}, {"node": "Memory Store", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "entry"]
+}

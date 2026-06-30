@@ -1,0 +1,51 @@
+{
+  "name": "JARVIS — General Chat",
+  "nodes": [
+    {
+      "parameters": {"jsCode": "return [$input.item];"},
+      "id": "gc-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_API_BASE || 'https://api.groq.com/openai/v1' }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.LLM_API_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'llama-3.3-70b-versatile', temperature: 0.3, messages: [{ role: 'system', content: 'You are JARVIS, a personal AI Operating Assistant. You are helpful, proactive, precise, and concise. You can help with general questions, coding, analysis, and creative tasks. Respond concisely but thoroughly.' }, { role: 'user', content: ($json.inputText || '') }] }) }}"
+      },
+      "id": "gc-llm",
+      "name": "Chat LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $json.choices?.[0]?.message?.content || 'I apologize, I could not generate a response.';\nreturn [{ json: { ...$input.item.json, responseText: content.trim(), success: true } }];"
+      },
+      "id": "gc-format",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Chat LLM", "type": "main", "index": 0}]]},
+    "Chat LLM": {"main": [[{"node": "Format Output", "type": "main", "index": 0}]]}
+  ],
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "chat"]
+}

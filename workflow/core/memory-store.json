@@ -1,0 +1,55 @@
+{
+  "name": "JARVIS — Memory Store",
+  "nodes": [
+    {
+      "parameters": {"jsCode": "return [{ json: { ...$input.item.json, action: 'save-session' } }];"},
+      "id": "ms-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {"workflowId": "JARVIS — Memory Adapter"},
+      "id": "ms-save-session",
+      "name": "Save Session",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [580, 200]
+    },
+    {
+      "parameters": {"workflowId": "JARVIS — LLM Adapter"},
+      "id": "ms-extract-facts",
+      "name": "Extract Facts (LLM)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [820, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"jsCode": "const facts = [];\ntry {\n  const raw = $json.llmResponse || '[]';\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  const parsed = JSON.parse(cleaned);\n  if (Array.isArray(parsed)) facts.push(...parsed);\n} catch (e) {}\n\nif (facts.length > 0) {\n  return [{ json: { action: 'save-facts', facts, sessionId: $json.sessionId, userId: $json.userId } }];\n}\nreturn [];"},
+      "id": "ms-parse-facts",
+      "name": "Parse Facts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 200]
+    },
+    {
+      "parameters": {"workflowId": "JARVIS — Memory Adapter"},
+      "id": "ms-save-facts",
+      "name": "Save Facts",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1300, 200]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Save Session", "type": "main", "index": 0}]]},
+    "Save Session": {"main": [[{"node": "Extract Facts (LLM)", "type": "main", "index": 0}]]},
+    "Extract Facts (LLM)": {"main": [[{"node": "Parse Facts", "type": "main", "index": 0}]]},
+    "Parse Facts": {"main": [[{"node": "Save Facts", "type": "main", "index": 0}]]}
+  ],
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "memory"]
+}

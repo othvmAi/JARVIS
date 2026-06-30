@@ -1,0 +1,151 @@
+{
+  "name": "JARVIS — LLM Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [$input.item];"
+      },
+      "id": "llm-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [
+            {"id": "is-groq", "leftValue": "={{ $env.LLM_PROVIDER || 'groq' }}", "rightValue": "groq", "operator": {"type": "string", "operation": "equals"}},
+            {"id": "is-ollama", "leftValue": "={{ $env.LLM_PROVIDER || 'groq' }}", "rightValue": "ollama", "operator": {"type": "string", "operation": "equals"}},
+            {"id": "is-openai", "leftValue": "={{ $env.LLM_PROVIDER || 'groq' }}", "rightValue": "openai", "operator": {"type": "string", "operation": "equals"}},
+            {"id": "is-anthropic", "leftValue": "={{ $env.LLM_PROVIDER || 'groq' }}", "rightValue": "anthropic", "operator": {"type": "string", "operation": "equals"}}
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "provider-switch",
+      "name": "Provider Switch",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_API_BASE || 'https://api.groq.com/openai/v1' }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.LLM_API_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'llama-3.1-8b-instant', temperature: $json.temperature ?? 0, response_format: $json.response_format, messages: $json.messages }) }}",
+        "options": {"timeout": 15000, "retryOnFail": true, "maxTries": 2}
+      },
+      "id": "llm-groq",
+      "name": "Groq / OpenAI Compatible",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_API_BASE || 'http://localhost:11434' }}/api/chat",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OLLAMA_MODEL || 'llama3.2:3b', stream: false, options: { temperature: $json.temperature ?? 0 }, messages: $json.messages }) }}",
+        "options": {"timeout": 30000, "retryOnFail": true, "maxTries": 2}
+      },
+      "id": "llm-ollama",
+      "name": "Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_API_BASE || 'https://api.openai.com/v1' }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OPENAI_MODEL || 'gpt-4o-mini', temperature: $json.temperature ?? 0, response_format: $json.response_format, messages: $json.messages }) }}",
+        "options": {"timeout": 30000, "retryOnFail": true, "maxTries": 2}
+      },
+      "id": "llm-openai",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "anthropic-version", "value": "2023-06-01"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307', max_tokens: 4096, temperature: $json.temperature ?? 0, system: $json.messages?.find(m => m.role === 'system')?.content || '', messages: $json.messages?.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content })) }) }}",
+        "options": {"timeout": 30000, "retryOnFail": true, "maxTries": 2}
+      },
+      "id": "llm-anthropic",
+      "name": "Anthropic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 700]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-llm-results",
+      "name": "Merge LLM Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = $env.LLM_PROVIDER || 'groq';\nlet raw = '';\ntry {\n  if (provider === 'ollama') {\n    raw = $json.message?.content || $json.response || '';\n  } else if (provider === 'anthropic') {\n    raw = $json.content?.[0]?.text || '';\n  } else {\n    raw = $json.choices?.[0]?.message?.content || '';\n  }\n} catch (e) {\n  raw = '';\n}\n\nconst cleaned = raw.replace(/```json|```/g, '').trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = { raw: cleaned };\n}\n\nreturn [{ json: { ...$input.item.json, llmResponse: cleaned, llmParsed: parsed, provider, success: true } }];"
+      },
+      "id": "parse-llm-response",
+      "name": "Parse LLM Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Provider Switch", "type": "main", "index": 0}]]},
+    "Provider Switch": {"main": [[{"node": "Groq / OpenAI Compatible", "type": "main", "index": 0}], [{"node": "Ollama", "type": "main", "index": 0}], [{"node": "OpenAI", "type": "main", "index": 0}], [{"node": "Anthropic", "type": "main", "index": 0}]]},
+    "Groq / OpenAI Compatible": {"main": [[{"node": "Merge LLM Results", "type": "main", "index": 0}]]},
+    "Ollama": {"main": [[{"node": "Merge LLM Results", "type": "main", "index": 0}]]},
+    "OpenAI": {"main": [[{"node": "Merge LLM Results", "type": "main", "index": 0}]]},
+    "Anthropic": {"main": [[{"node": "Merge LLM Results", "type": "main", "index": 0}]]},
+    "Merge LLM Results": {"main": [[{"node": "Parse LLM Response", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "llm", "adapter"]
+}

@@ -1,0 +1,98 @@
+{
+  "name": "JARVIS — Memory Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [$input.item];"
+      },
+      "id": "ma-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "save-session", "leftValue": "={{ $json.action }}", "rightValue": "save-session", "operator": {"type": "string", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "ma-switch",
+      "name": "Action Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $json.sessionId || 'default';\nconst userId = $json.userId || 'default';\nconst inputText = $json.inputText || '';\nconst responseText = $json.responseText || '';\nconst intent = $json.intent || '';\n\nconst session = {\n  userId,\n  sessionId,\n  lastMessage: inputText,\n  lastResponse: responseText,\n  lastIntent: intent,\n  timestamp: new Date().toISOString(),\n  version: '1.0.0'\n};\n\nconst sd = $getWorkflowStaticData('global');\nsd.sessions = sd.sessions || {};\nsd.sessions[sessionId] = session;\n\nreturn [{ json: { ...$json, saved: true } }];"
+      },
+      "id": "ma-save-session",
+      "name": "Save Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { facts, sessionId, userId } = $json;\n\nconst sd = $getWorkflowStaticData('global');\nsd.facts = sd.facts || {};\n\nfor (const fact of facts) {\n  const key = fact.category + ':' + fact.key;\n  sd.facts[key] = { ...fact, userId, sessionId, updated: new Date().toISOString() };\n}\n\nreturn [{ json: { ...$json, factsSaved: facts.length } }];"
+      },
+      "id": "ma-save-facts",
+      "name": "Save Facts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $json.sessionId;\nconst sd = $getWorkflowStaticData('global');\nconst session = sd.sessions?.[sessionId] || null;\nreturn [{ json: { ...$json, session } }];"
+      },
+      "id": "ma-get-session",
+      "name": "Get Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { userId, category } = $json;\nconst sd = $getWorkflowStaticData('global');\nconst facts = sd.facts || {};\nlet result = Object.values(facts);\nif (userId) result = result.filter(f => f.userId === userId);\nif (category) result = result.filter(f => f.category === category);\nreturn [{ json: { ...$json, facts: result } }];"
+      },
+      "id": "ma-get-facts",
+      "name": "Get Facts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 700]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "ma-merge",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Action Switch", "type": "main", "index": 0}]]},
+    "Action Switch": {
+      "main": [
+        [{"node": "Save Session", "type": "main", "index": 0}],
+        [{"node": "Save Facts", "type": "main", "index": 0}],
+        [{"node": "Get Session", "type": "main", "index": 0}],
+        [{"node": "Get Facts", "type": "main", "index": 0}]
+      ]
+    },
+    "Save Session": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]},
+    "Save Facts": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]},
+    "Get Session": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]},
+    "Get Facts": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]}
+  ],
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["core", "memory", "adapter"]
+}
