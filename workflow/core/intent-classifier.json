@@ -34,7 +34,7 @@
     "Input": {"main": [[{"node": "LLM Adapter", "type": "main", "index": 0}]]},
     "LLM Adapter": {"main": [[{"node": "Parse Intent", "type": "main", "index": 0}]]}
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {"executionOrder": "v1", "errorWorkflow": "JARVIS — Error Handler"},
   "staticData": null,
   "tags": ["core", "intent"]
 }

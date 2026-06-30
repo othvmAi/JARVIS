@@ -2,8 +2,16 @@
   "name": "JARVIS — Error Handler",
   "nodes": [
     {
+      "parameters": {},
+      "id": "eh-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.workflowErrorTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
       "parameters": {
-        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({\n        timestamp: new Date().toISOString(),\n        level, traceId: $json.traceId || 'unknown',\n        workflow: 'error-handler', message, meta\n      })\n    );\n  }\n};\n\nconst error = $json.error || {};\nconst errorMessage = error.message || error.error || $json.message || 'Unknown error';\nconst workflowId = $json.workflow?.id || $json.workflow || 'unknown';\nconst executionId = $json.execution?.id || 'unknown';\n\nlet traceId = 'no-trace';\ntry {\n  const runData = $json.execution?.data?.resultData?.runData || {};\n  const normalizeNode = runData['Normalize Request'] || runData['Input'] || {};\n  const firstData = normalizeNode[0]?.data?.main?.[0]?.[0]?.json;\n  if (firstData?.traceId) traceId = firstData.traceId;\n  else if (firstData?.sessionId) traceId = firstData.sessionId;\n} catch (e) {\n  traceId = 'err_' + Date.now();\n}\n\njarvisLog('error', 'Workflow failed', { workflow: workflowId, executionId, error: errorMessage });\n\nlet userMessage;\nif (errorMessage && errorMessage.includes('RATE_LIMIT_EXCEEDED')) {\n  userMessage = '\u23f3 Too many requests. Please wait a moment before trying again.';\n} else {\n  userMessage = '\u26a0\ufe0f Something went wrong (' + traceId + '). Please try again or check logs.';\n}\n\nreturn [{ json: { ...$input.item.json, errorMessage: userMessage, errorLogged: true, traceId } }];"
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({\n        timestamp: new Date().toISOString(),\n        level, traceId: $json.traceId || 'unknown',\n        workflow: 'error-handler', message, meta\n      })\n    );\n  }\n};\n\nconst error = $json.error || {};\nconst errorMessage = error.message || error.error || $json.message || 'Unknown error';\nconst workflowId = $json.workflow?.id || $json.workflow || 'unknown';\nconst executionId = $json.execution?.id || 'unknown';\n\nlet traceId = 'no-trace';\ntry {\n  const runData = $json.execution?.data?.resultData?.runData || {};\n  const normalizeNode = runData['Normalize Request'] || runData['Input'] || {};\n  const firstData = normalizeNode[0]?.data?.main?.[0]?.[0]?.json;\n  if (firstData?.traceId) traceId = firstData.traceId;\n  else if (firstData?.sessionId) traceId = firstData.sessionId;\n} catch (e) {\n  traceId = 'err_' + Date.now();\n}\n\njarvisLog('error', 'Workflow failed', { workflow: workflowId, executionId, error: errorMessage });\n\nlet userMessage;\nif (errorMessage && errorMessage.includes('RATE_LIMIT_EXCEEDED')) {\n  userMessage = '\u23f3 Too many requests. Please wait a moment before trying again.';\n} else {\n  userMessage = '\u26a0\ufe0f Something went wrong (' + traceId + '). Please try again or check logs.';\n}\n\nreturn [{ json: { ...$json, errorMessage: userMessage, errorLogged: true, traceId } }];"
       },
       "id": "eh-log",
       "name": "Log Error",
@@ -68,13 +76,13 @@
     }
   ],
   "connections": {
+    "Error Trigger": {"main": [[{"node": "Log Error", "type": "main", "index": 0}]]},
     "Log Error": {"main": [[{"node": "Is Telegram?", "type": "main", "index": 0}]]},
     "Is Telegram?": {"main": [[{"node": "Send to Telegram", "type": "main", "index": 0}], [{"node": "Is Website?", "type": "main", "index": 0}]]},
     "Is Website?": {"main": [[{"node": "Respond to Website", "type": "main", "index": 0}]]}
   },
   "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": "JARVIS — Error Handler"
+    "executionOrder": "v1"
   },
   "staticData": null,
   "tags": ["core", "error"]

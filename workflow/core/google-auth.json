@@ -36,7 +36,8 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
   },
   "staticData": null,
   "tags": ["core", "auth", "google"]

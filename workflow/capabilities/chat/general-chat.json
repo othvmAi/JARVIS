@@ -28,24 +28,55 @@
       "name": "Chat LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [580, 300]
+      "position": [580, 300],
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const content = $json.choices?.[0]?.message?.content || 'I apologize, I could not generate a response.';\nreturn [{ json: { ...$input.item.json, responseText: content.trim(), success: true } }];"
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "gc-check-status", "leftValue": "={{ $json.statusCode === undefined || ($json.statusCode >= 200 && $json.statusCode < 300) }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "gc-check-success",
+      "name": "API Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $json.choices?.[0]?.message?.content || $json.llmResponse || '';\nreturn [{ json: { ...$input.item.json, responseText: content.trim(), success: true } }];"
       },
       "id": "gc-format",
       "name": "Format Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [820, 300]
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({ timestamp: new Date().toISOString(), level, traceId: $json.sessionId || 'unknown', workflow: 'general-chat', message, meta })\n    );\n  }\n};\nconst statusCode = $json.statusCode || 0;\nconst statusMessage = $json.statusMessage || $json.error?.message || 'Unknown error';\njarvisLog('error', 'LLM request failed', { statusCode, statusMessage });\nreturn [{ json: { ...$json, responseText: '\u26a0\ufe0f Could not generate a response. LLM returned error: ' + statusMessage, success: false } }];"
+      },
+      "id": "gc-handle-error",
+      "name": "Handle API Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
     }
   ],
   "connections": {
     "Input": {"main": [[{"node": "Chat LLM", "type": "main", "index": 0}]]},
-    "Chat LLM": {"main": [[{"node": "Format Output", "type": "main", "index": 0}]]}
+    "Chat LLM": {"main": [[{"node": "API Success?", "type": "main", "index": 0}]]},
+    "API Success?": {
+      "main": [
+        [{"node": "Format Output", "type": "main", "index": 0}],
+        [{"node": "Handle API Error", "type": "main", "index": 0}]
+      ]
+    }
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {"executionOrder": "v1", "errorWorkflow": "JARVIS — Error Handler"},
   "staticData": null,
   "tags": ["core", "chat"]
 }

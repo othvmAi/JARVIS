@@ -21,6 +21,7 @@ Complete reference for all n8n workflows in the JARVIS architecture.
 | Website Webhook | `webhook` | Receives POST from website |
 | Merge Entry Points | `merge` | Combines both triggers |
 | Normalize Request | `code` | Unifies payload to common shape |
+| Input Processor | `executeWorkflow` | Calls `JARVIS — Input Processor` for voice/photo/document/location |
 | Auth Gate | `code` | Validates owner + webhook secret |
 | Rate Limit | `code` | Per-user, per-minute limit |
 | Intent Classifier | `executeWorkflow` | Calls `JARVIS — Intent Classifier` |
@@ -264,19 +265,21 @@ knowledge_query
 
 **Purpose:** Catch errors, log them, send user-friendly message.
 
-**Input:** Error object from failed workflow
+**Input:** Error object from failed workflow (passed automatically by n8n when workflow is set as error workflow in another workflow's settings)
 
 **Nodes:**
 | Node | Type | Purpose |
 |---|---|---|
-| Input | `code` | Pass-through |
+| Error Trigger | `workflowErrorTrigger` | Receives error payload from n8n runtime |
 | Log Error | `code` | Console.error with traceId, workflow, error |
 | Is Telegram? | `if` | Checks `source === 'telegram'` |
 | Is Website? | `if` | Checks `source === 'website'` |
 | Send to Telegram | `httpRequest` | Sends error message to user |
 | Respond to Website | `respondToWebhook` | Returns error JSON |
 
-**User Message:** `⚠️ Something went wrong (traceId). Please try again or check logs.`
+**User Messages:**
+- `⏳ Too many requests. Please wait a moment before trying again.` (when RATE_LIMIT_EXCEEDED)
+- `⚠️ Something went wrong (traceId). Please try again or check logs.` (generic)
 
 ---
 
@@ -306,6 +309,30 @@ knowledge_query
 ```
 
 **Called by:** All Google capability agents via `executeWorkflow` before making API calls.
+
+---
+
+### 11. `input-processor.json` — Input Preprocessing
+
+**Purpose:** Preprocess non-text inputs (voice, photo, document, location) before intent classification.
+
+**Input:** Normalized request from entry workflow with `inputType` and optional `inputBinary`/`inputLocation`
+
+**Nodes:**
+| Node | Type | Purpose |
+|---|---|---|
+| Input | `code` | Pass-through |
+| Input Type Switch | `switch` | Routes by `inputType`: voice, photo, document, location, unknown |
+| Transcribe Voice | `code` | Downloads audio via Telegram Bot API, transcribes with Groq Whisper STT |
+| Handle Photo | `code` | Placeholder — "I can't analyze images yet" |
+| Handle Document | `code` | Returns filename + "I can't process files yet" |
+| Handle Location | `code` | Converts coordinates to "My location is: lat, lon" |
+| Handle Unknown | `code` | Generic fallback — "I didn't understand" |
+
+**Transcription:**
+- Requires `GROQ_API_KEY` and `TELEGRAM_BOT_TOKEN` env vars
+- Falls back gracefully if API keys are missing or Groq Whisper fails
+- Sets `inputText` to transcribed text for voice, or appropriate fallback message
 
 ---
 
@@ -377,16 +404,26 @@ Build Request (code)
     - Builds provider-specific HTTP request
     │
     ▼
-HTTP Request (httpRequest)
+HTTP Request (httpRequest)  [continueOnFail: true]
     - Calls provider API
     - Handles auth (API key or Bearer token)
     │
     ▼
-Format Response (code)
-    - Parses provider response
-    - Formats user-friendly output
-    - Returns { responseText, success }
+API Success? (if)
+    - Checks: $json.statusCode === undefined || (200 <= statusCode < 300)
+    │
+    ├── true → Format Response (code)
+    │   - Parses provider response
+    │   - Formats user-friendly output
+    │   - Returns { responseText, success }
+    │
+    └── false → Handle API Error (code)
+        - Logs error with traceId via inline jarvisLog()
+        - If 401: refresh OAuth token via google-auth.json, retry once
+        - Returns { responseText, success: false, error }
 ```
+
+**Error configuration:** Every workflow has `errorWorkflow: "JARVIS — Error Handler"` in settings to catch unhandled errors.
 
 ---
 
@@ -396,6 +433,7 @@ Format Response (code)
 1. entry.json (triggered by Telegram/Webhook)
    │
    ├── Normalize Request
+   ├── JARVIS — Input Processor (voice/photo/document/location)
    ├── Auth Gate
    ├── Rate Limit
    ├── intent-classifier.json
@@ -480,6 +518,7 @@ All `executeWorkflow` nodes reference workflows by **name**. The names must matc
 | `response-sender.json` | `JARVIS — Response Sender` |
 | `config-validator.json` | `JARVIS — Config Validator` |
 | `error-handler.json` | `JARVIS — Error Handler` |
+| `input-processor.json` | `JARVIS — Input Processor` |
 
 | `google-auth.json` | `JARVIS — Google Auth` |
 | `gmail-agent.json` | `JARVIS — Gmail Agent` |

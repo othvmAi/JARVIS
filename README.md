@@ -152,6 +152,10 @@ workflow/
    pip install flask
    python scripts/sqlite-memory-server.py
    ```
+   Or with Docker:
+   ```bash
+   docker run -d --name jarvis-memory -p 8710:8710 -v "$(pwd)/scripts:/app" -w /app python:3.11-slim bash -c "pip install flask && python sqlite-memory-server.py"
+   ```
    The server runs on `http://localhost:8710`. See [SQLite Memory Server](#sqlite-memory-server) for details.
 
 3. **Import workflows into n8n**
@@ -366,7 +370,14 @@ python scripts/sqlite-memory-server.py
 # Using nohup
 nohup python scripts/sqlite-memory-server.py > memory-server.log 2>&1 &
 
-# Using Docker (if you prefer)
+# Using Docker
+docker run -d --restart always --name jarvis-memory \
+  -p 8710:8710 \
+  -v /path/to/data:/data \
+  -e SQLITE_MEMORY_PATH=/data/jarvis_memory.db \
+  python:3.11-slim \
+  bash -c "pip install flask && python /app/sqlite-memory-server.py"
+
 # Or use a systemd service for auto-restart
 ```
 

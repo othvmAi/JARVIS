@@ -101,8 +101,8 @@ JARVIS is a **single-owner, personal AI operating assistant** built on a **capab
 │                      MEMORY STORE                               │
 │  Session save + Fact extraction (LLM) → Memory Adapter         │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐  │
-│  │ n8n-static      │  │ SQLite          │  │ PostgreSQL     │  │
-│  │ (default)       │  │ (future)        │  │ + pgvector     │  │
+│  │ SQLite          │  │ n8n-static      │  │ PostgreSQL     │  │
+│  │ (default)       │  │ (fallback)      │  │ + pgvector     │  │
 │  └─────────────────┘  └─────────────────┘  └────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -153,7 +153,7 @@ Unified LLM interface.
 ### `core/memory-adapter.json`
 Unified memory interface.
 - Actions: `save-session`, `get-session`, `save-facts`, `get-facts`
-- Providers: n8n-static (default), SQLite (stub), PostgreSQL (stub)
+- Providers: SQLite (default), n8n-static (fallback), PostgreSQL (stub)
 - Configured via `MEMORY_PROVIDER` env var
 
 ### `core/memory-store.json`
@@ -171,7 +171,7 @@ Formats and delivers responses.
 ### `core/config-validator.json`
 Validates required environment variables on startup.
 - Required: TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, OWNER_USER_ID, LLM_API_KEY, LLM_API_BASE, LLM_MODEL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
-- Conditionally requires SQLITE_MEMORY_URL/SQLITE_MEMORY_PATH if MEMORY_PROVIDER != n8n-static
+- SQLITE_MEMORY_URL/SQLITE_MEMORY_PATH are optional (code defaults to http://localhost:8710 / scripts/jarvis_memory.db)
 - Fails fast if missing
 
 ### `core/error-handler.json`
@@ -286,7 +286,7 @@ All configuration via environment variables in n8n.
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `ANTHROPIC_MODEL` | `claude-3-haiku-20240307` | Anthropic model |
-| `MEMORY_PROVIDER` | `n8n-static` | sqlite, n8n-static, postgres |
+| `MEMORY_PROVIDER` | `sqlite` | sqlite, n8n-static, postgres |
 | `SQLITE_MEMORY_URL` | `http://localhost:8710` | SQLite memory server URL (required if MEMORY_PROVIDER=sqlite) |
 | `SQLITE_MEMORY_PATH` | — | SQLite memory DB path (alternative to URL) |
 | `GROQ_API_KEY` | — | Groq API key (used for LLM and Whisper STT) |
@@ -371,7 +371,7 @@ workflow/
 ## Known Limitations
 
 1. **Google-only providers** — Only Google adapters implemented today. Architecture supports others but not built.
-2. **PostgreSQL memory** — Not implemented yet. Only SQLite and n8n-static providers are available.
+2. **PostgreSQL memory** — Not implemented yet. Only SQLite and n8n-static providers are available, with SQLite as the default.
 3. **Whisper STT only** — Voice transcription only works with Groq Whisper. No offline/local STT.
 4. **Single n8n instance** — No horizontal scaling.
 5. **No workflow versioning** — Workflows are JSON files, no migration system.
