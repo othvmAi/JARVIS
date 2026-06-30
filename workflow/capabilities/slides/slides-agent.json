@@ -1,11 +1,37 @@
 {
-  "name": "JARVIS 4.5 — Slides Agent",
+  "name": "JARVIS — Slides Agent",
   "nodes": [
     {"parameters": {"jsCode": "return [$input.item];"}, "id": "sl-input-001", "name": "Input", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [340, 300]},
-    {"parameters": {"jsCode": "const intent = $json.intent || '';\nconst params = $json.intentParams || {};\nconst GOOGLE_API_KEY = $env.GOOGLE_API_KEY || '';\n\nif (!GOOGLE_API_KEY) {\n  return [{ json: { ...$json, responseText: '\u26a0\ufe0f GOOGLE_API_KEY not configured.', success: false } }];\n}\n\nlet endpoint, body, method = 'GET';\nif (intent === 'slides_create') {\n  endpoint = 'https://slides.googleapis.com/v1/presentations';\n  method = 'POST';\n  body = { title: params.title || 'Untitled Presentation' };\n} else {\n  return [{ json: { ...$json, responseText: '\u2753 Unknown Slides intent: ' + intent, success: false } }];\n}\n\nreturn [{ json: { ...$json, apiEndpoint: endpoint, apiBody: body, apiMethod: method } }];"}, "id": "sl-build-001", "name": "Build Request", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [580, 300]},
-    {"parameters": {"method": "POST", "url": "={{ $json.apiEndpoint }}", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.apiBody || {}) }}", "sendQuery": true, "queryParameters": {"parameters": [{"name": "key", "value": "={{ $env.GOOGLE_API_KEY }}"}]}, "options": {"timeout": 15000, "retryOnFail": true, "maxTries": 2}}, "id": "sl-api-001", "name": "Slides API", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [820, 300]},
-    {"parameters": {"jsCode": "if ($json.presentationId) {\n  const url = `https://docs.google.com/presentation/d/${$json.presentationId}/edit`;\n  return [{ json: { ...$input.item.json, responseText: `\ud83c\udfc4 Presentation created!\n\n<b>${$json.title}</b>\n\n\ud83d\udd17 ${url}`, success: true } }];\n}\nreturn [{ json: { ...$input.item.json, responseText: `\ud83c\udfc4 Slides operation completed.`, success: true } }];"}, "id": "sl-format-001", "name": "Format Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1060, 300]}
+    {"parameters": {"workflowId": "JARVIS — Google Auth"}, "id": "sl-auth-001", "name": "Get Google Auth", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [500, 300]},
+    {"parameters": {"jsCode": "const intent = $json.intent || '';\nconst params = $json.intentParams || {};\nconst accessToken = $json.accessToken || '';\nif (!accessToken) { return [{ json: { ...$json, responseText: '\u26a0\ufe0f Google Auth failed: no access token.', success: false } }]; }\nlet endpoint, body, method = 'GET';\nif (intent === 'slides_create') {\n  if (!params.title) return [{ json: { ...$json, responseText: '\u2757 Required param missing: title', success: false } }];\n  endpoint = 'https://slides.googleapis.com/v1/presentations';\n  method = 'POST';\n  body = { title: params.title };\n} else { return [{ json: { ...$json, responseText: '\u2753 Unknown Slides intent: ' + intent, success: false } }]; }\nreturn [{ json: { ...$json, apiEndpoint: endpoint, apiBody: body, apiMethod: method, bearerToken: accessToken, _ctx: { intent, params, accessToken, source: $json.source, userId: $json.userId, sessionId: $json.sessionId, inputText: $json.inputText } } }];"}, "id": "sl-build-001", "name": "Build Request", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [660, 300]},
+    {"parameters": {"method": "={{ $json.apiMethod }}", "url": "={{ $json.apiEndpoint }}", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.apiBody || {}) }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.bearerToken }}"}]}, "options": {"timeout": 15000, "retryOnFail": true, "maxTries": 2}, "continueOnFail": true}, "id": "sl-api-001", "name": "Slides API", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [820, 300]},
+    {
+      "parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1}, "conditions": [{"id": "sl-check-status", "leftValue": "={{ $json.statusCode === undefined || ($json.statusCode >= 200 && $json.statusCode < 300) }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}], "combinator": "and"}},
+      "id": "sl-check-success",
+      "name": "API Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {"jsCode": "const ctx = $json._ctx || $('Build Request').first().json._ctx || {};\nif ($json.presentationId) {\n  const url = `https://docs.google.com/presentation/d/${$json.presentationId}/edit`;\n  return [{ json: { ...ctx, responseText: `\ud83c\udfc4 Presentation created!\n\n<b>${$json.title}</b>\n\n\ud83d\udd17 ${url}`, success: true, intent: ctx.intent } }];\n}\nreturn [{ json: { ...ctx, responseText: `\ud83c\udfc4 Slides operation completed.`, success: true, intent: ctx.intent } }];"}, "id": "sl-format-001", "name": "Format Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1140, 200]},
+    {
+      "parameters": {"jsCode": "const ctx = $json._ctx || $('Build Request').first().json._ctx || {};\nconst jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) { console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify({ timestamp: new Date().toISOString(), level, traceId: ctx.sessionId || 'unknown', workflow: 'slides-agent', message, meta })); }\n};\nconst statusCode = $json.statusCode || $json.error?.statusCode || 0;\nconst statusMessage = $json.statusMessage || $json.error?.message || 'Unknown error';\nif (statusCode === 401) {\n  jarvisLog('warn', 'Token expired, attempting refresh', { intent: ctx.intent });\n  try {\n    const authRes = await $helpers.httpRequest({ method: 'POST', url: 'https://oauth2.googleapis.com/token', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'client_id=' + encodeURIComponent($env.GOOGLE_CLIENT_ID) + '&client_secret=' + encodeURIComponent($env.GOOGLE_CLIENT_SECRET) + '&refresh_token=' + encodeURIComponent($env.GOOGLE_REFRESH_TOKEN) + '&grant_type=refresh_token', timeout: 15000 });\n    const retryRes = await $helpers.httpRequest({ method: $('Build Request').first().json.apiMethod || 'GET', url: $('Build Request').first().json.apiEndpoint, headers: { 'Authorization': 'Bearer ' + authRes.access_token }, body: $('Build Request').first().json.apiBody, timeout: 15000 });\n    return [{ json: { ...retryRes, _ctx: ctx } }];\n  } catch (retryErr) {\n    jarvisLog('error', 'Auth retry failed', { intent: ctx.intent, error: retryErr.message });\n    return [{ json: { ...ctx, responseText: '\u26a0\ufe0f Authentication failed after refresh. Please re-authenticate Google OAuth.', success: false, intent: ctx.intent } }];\n  }\n}\njarvisLog('error', 'API request failed', { intent: ctx.intent, statusCode, statusMessage });\nreturn [{ json: { ...ctx, responseText: '\u26a0\ufe0f Could not complete your request. API returned error ' + statusCode + ': ' + statusMessage + '. Please try again.', success: false, intent: ctx.intent, error: { statusCode, provider: 'slides', intent: ctx.intent } } }];"},
+      "id": "sl-handle-error-001",
+      "name": "Handle API Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 400]
+    }
   ],
-  "connections": {"Input": {"main": [[{"node": "Build Request", "type": "main", "index": 0}]]}, "Build Request": {"main": [[{"node": "Slides API", "type": "main", "index": 0}]]}, "Slides API": {"main": [[{"node": "Format Response", "type": "main", "index": 0}]]}},
-  "settings": {"executionOrder": "v1"}, "staticData": null, "tags": []
+  "connections": {
+    "Input": {"main": [[{"node": "Get Google Auth", "type": "main", "index": 0}]]},
+    "Get Google Auth": {"main": [[{"node": "Build Request", "type": "main", "index": 0}]]},
+    "Build Request": {"main": [[{"node": "Slides API", "type": "main", "index": 0}]]},
+    "Slides API": {"main": [[{"node": "API Success?", "type": "main", "index": 0}]]},
+    "API Success?": {"main": [[{"node": "Format Response", "type": "main", "index": 0}], [{"node": "Handle API Error", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "errorWorkflow": "JARVIS — Error Handler"},
+  "staticData": null,
+  "tags": []
 }

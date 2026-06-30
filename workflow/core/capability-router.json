@@ -35,16 +35,26 @@
       "typeVersion": 3,
       "position": [580, 300]
     },
-    {"parameters": {"workflowId": "JARVIS 4.6 — Gmail Agent"}, "id": "exec-mail", "name": "Mail Agent (Gmail)", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, -200]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Calendar Agent"}, "id": "exec-calendar", "name": "Calendar Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, -80]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Drive Agent"}, "id": "exec-storage", "name": "Storage Agent (Drive)", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 40]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Contacts Agent"}, "id": "exec-contacts", "name": "Contacts Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 160]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Docs Agent"}, "id": "exec-docs", "name": "Docs Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 280]},
-    {"parameters": {"workflowId": "JARVIS 4.5 — Slides Agent"}, "id": "exec-slides", "name": "Slides Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 400]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Tasks Agent"}, "id": "exec-tasks", "name": "Tasks Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 520]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Sheets Agent"}, "id": "exec-sheets", "name": "Sheets Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 640]},
-    {"parameters": {"workflowId": "JARVIS 4.6 — Knowledge Agent"}, "id": "exec-knowledge", "name": "Knowledge Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 760]},
-    {"parameters": {"workflowId": "JARVIS — General Chat"}, "id": "exec-chat", "name": "General Chat", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 880]}
+    {"parameters": {"workflowId": "={{ $env.MAIL_AGENT_NAME || 'JARVIS — Gmail Agent' }}"}, "id": "exec-mail", "name": "Mail Agent (Gmail)", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, -240]},
+    {"parameters": {"workflowId": "={{ $env.CALENDAR_AGENT_NAME || 'JARVIS — Calendar Agent' }}"}, "id": "exec-calendar", "name": "Calendar Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, -120]},
+    {"parameters": {"workflowId": "={{ $env.STORAGE_AGENT_NAME || 'JARVIS — Drive Agent' }}"}, "id": "exec-storage", "name": "Storage Agent (Drive)", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 0]},
+    {"parameters": {"workflowId": "={{ $env.CONTACTS_AGENT_NAME || 'JARVIS — Contacts Agent' }}"}, "id": "exec-contacts", "name": "Contacts Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 120]},
+    {"parameters": {"workflowId": "={{ $env.DOCS_AGENT_NAME || 'JARVIS — Docs Agent' }}"}, "id": "exec-docs", "name": "Docs Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 240]},
+    {"parameters": {"workflowId": "={{ $env.SLIDES_AGENT_NAME || 'JARVIS — Slides Agent' }}"}, "id": "exec-slides", "name": "Slides Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 360]},
+    {"parameters": {"workflowId": "={{ $env.TASKS_AGENT_NAME || 'JARVIS — Tasks Agent' }}"}, "id": "exec-tasks", "name": "Tasks Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 480]},
+    {"parameters": {"workflowId": "={{ $env.SHEETS_AGENT_NAME || 'JARVIS — Sheets Agent' }}"}, "id": "exec-sheets", "name": "Sheets Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 600]},
+    {"parameters": {"workflowId": "={{ $env.KNOWLEDGE_AGENT_NAME || 'JARVIS — Knowledge Agent' }}"}, "id": "exec-knowledge", "name": "Knowledge Agent", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 720]},
+    {"parameters": {"workflowId": "={{ $env.CHAT_AGENT_NAME || 'JARVIS — General Chat' }}"}, "id": "exec-chat", "name": "General Chat", "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.1, "position": [820, 840]},
+    {
+      "parameters": {
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({\n        timestamp: new Date().toISOString(),\n        level, traceId: $json.sessionId || $json.traceId || 'unknown',\n        workflow: 'capability-router', message, meta\n      })\n    );\n  }\n};\n\nconst originalIntent = $json.intent || 'unknown';\njarvisLog('warn', 'Unknown intent received', { intent: originalIntent, inputText: $json.inputText });\n\nreturn [{ json: {\n  ...$json,\n  responseText: \"I'm not sure how to handle that request. I understand: emails, calendar, files, contacts, documents, spreadsheets, tasks, and general questions. Could you rephrase?\",\n  success: false,\n  intent: 'unknown',\n  originalIntent\n} }];"
+      },
+      "id": "cr-unknown",
+      "name": "Handle Unknown Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 960]
+    }
   ],
   "connections": {
     "Input": {"main": [[{"node": "Route to Capability", "type": "main", "index": 0}]]},
@@ -59,11 +69,15 @@
         [{"node": "Tasks Agent", "type": "main", "index": 0}],
         [{"node": "Sheets Agent", "type": "main", "index": 0}],
         [{"node": "Knowledge Agent", "type": "main", "index": 0}],
-        [{"node": "General Chat", "type": "main", "index": 0}]
+        [{"node": "General Chat", "type": "main", "index": 0}],
+        [{"node": "Handle Unknown Intent", "type": "main", "index": 0}]
       ]
     }
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
   "staticData": null,
   "tags": ["core", "router"]
 }

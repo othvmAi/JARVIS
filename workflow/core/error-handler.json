@@ -3,23 +3,13 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "return [$input.item];"
-      },
-      "id": "eh-input",
-      "name": "Input",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [340, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const error = $json.error || $json.message || 'Unknown error';\nconst workflow = $json.workflow || 'unknown';\nconst traceId = $json.traceId || 'no-trace';\nconst timestamp = new Date().toISOString();\n\nconsole.error(`[ERROR] traceId=${traceId} workflow=${workflow} error=${error}`);\n\nconst userMessage = `⚠️ Something went wrong (${traceId}). Please try again or check logs.`;\n\nreturn [{ json: { ...$input.item.json, errorMessage: userMessage, errorLogged: true, traceId } }];"
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({\n        timestamp: new Date().toISOString(),\n        level, traceId: $json.traceId || 'unknown',\n        workflow: 'error-handler', message, meta\n      })\n    );\n  }\n};\n\nconst error = $json.error || {};\nconst errorMessage = error.message || error.error || $json.message || 'Unknown error';\nconst workflowId = $json.workflow?.id || $json.workflow || 'unknown';\nconst executionId = $json.execution?.id || 'unknown';\n\nlet traceId = 'no-trace';\ntry {\n  const runData = $json.execution?.data?.resultData?.runData || {};\n  const normalizeNode = runData['Normalize Request'] || runData['Input'] || {};\n  const firstData = normalizeNode[0]?.data?.main?.[0]?.[0]?.json;\n  if (firstData?.traceId) traceId = firstData.traceId;\n  else if (firstData?.sessionId) traceId = firstData.sessionId;\n} catch (e) {\n  traceId = 'err_' + Date.now();\n}\n\njarvisLog('error', 'Workflow failed', { workflow: workflowId, executionId, error: errorMessage });\n\nlet userMessage;\nif (errorMessage && errorMessage.includes('RATE_LIMIT_EXCEEDED')) {\n  userMessage = '\u23f3 Too many requests. Please wait a moment before trying again.';\n} else {\n  userMessage = '\u26a0\ufe0f Something went wrong (' + traceId + '). Please try again or check logs.';\n}\n\nreturn [{ json: { ...$input.item.json, errorMessage: userMessage, errorLogged: true, traceId } }];"
       },
       "id": "eh-log",
       "name": "Log Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [580, 300]
+      "position": [340, 300]
     },
     {
       "parameters": {
@@ -33,7 +23,7 @@
       "name": "Is Telegram?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [820, 200]
+      "position": [580, 200]
     },
     {
       "parameters": {
@@ -47,7 +37,7 @@
       "name": "Is Website?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [820, 400]
+      "position": [580, 400]
     },
     {
       "parameters": {
@@ -56,13 +46,14 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ chat_id: $json.metadata?.chatId, text: $json.errorMessage, parse_mode: 'HTML' }) }}",
-        "options": {"timeout": 5000}
+        "options": {"timeout": 5000},
+        "continueOnFail": true
       },
       "id": "eh-send-telegram",
       "name": "Send to Telegram",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1060, 100]
+      "position": [820, 100]
     },
     {
       "parameters": {
@@ -73,16 +64,18 @@
       "name": "Respond to Website",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1060, 400]
+      "position": [820, 400]
     }
   ],
   "connections": {
-    "Input": {"main": [[{"node": "Log Error", "type": "main", "index": 0}]]},
     "Log Error": {"main": [[{"node": "Is Telegram?", "type": "main", "index": 0}]]},
     "Is Telegram?": {"main": [[{"node": "Send to Telegram", "type": "main", "index": 0}], [{"node": "Is Website?", "type": "main", "index": 0}]]},
     "Is Website?": {"main": [[{"node": "Respond to Website", "type": "main", "index": 0}]]}
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
   "staticData": null,
   "tags": ["core", "error"]
 }

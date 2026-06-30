@@ -1,0 +1,43 @@
+{
+  "name": "JARVIS — Google Auth",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [$input.item];"
+      },
+      "id": "ga-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nconst cached = sd.googleAuth || {};\nconst now = Date.now();\n\nif (cached.accessToken && cached.expiresAt && now < cached.expiresAt) {\n  return [{ json: { ...$json, accessToken: cached.accessToken } }];\n}\n\nconst clientId = $env.GOOGLE_CLIENT_ID;\nconst clientSecret = $env.GOOGLE_CLIENT_SECRET;\nconst refreshToken = $env.GOOGLE_REFRESH_TOKEN;\n\nif (!clientId || !clientSecret || !refreshToken) {\n  throw new Error('GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN must be set');\n}\n\nconst response = await $helpers.httpRequest({\n  method: 'POST',\n  url: 'https://oauth2.googleapis.com/token',\n  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n  body: 'client_id=' + encodeURIComponent(clientId) +\n    '&client_secret=' + encodeURIComponent(clientSecret) +\n    '&refresh_token=' + encodeURIComponent(refreshToken) +\n    '&grant_type=refresh_token',\n  timeout: 15000\n});\n\nsd.googleAuth = {\n  accessToken: response.access_token,\n  expiresAt: now + (response.expires_in - 100) * 1000\n};\n\nreturn [{ json: { ...$json, accessToken: response.access_token } }];"
+      },
+      "id": "ga-get-token",
+      "name": "Get or Refresh Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 300]
+    }
+  ],
+  "connections": {
+    "Input": {
+      "main": [
+        [
+          {
+            "node": "Get or Refresh Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["core", "auth", "google"]
+}

@@ -1,10 +1,8 @@
 {
-  "name": "JARVIS 4.6 — Knowledge Agent",
+  "name": "JARVIS — Knowledge Agent",
   "nodes": [
     {
-      "parameters": {
-        "jsCode": "return [$input.item];"
-      },
+      "parameters": {"jsCode": "return [$input.item];"},
       "id": "kn-input-001",
       "name": "Input",
       "type": "n8n-nodes-base.code",
@@ -13,7 +11,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const query = $json.intentParams?.query || $json.inputText || '';\nconst sentences = $json.intentParams?.sentences || 3;\nconst WOLFRAM_APPID = $env.WOLFRAM_ALPHA_APPID || '';\nconst SERPAPI_KEY = $env.SERPAPI_API_KEY || '';\n\nif (!query) {\n  return [{ json: { ...$json, responseText: '\u2757 Query required.', success: false } }];\n}\n\nreturn [{ json: { ...$json, query, sentences, wolframAppId: WOLFRAM_APPID, serpApiKey: SERPAPI_KEY } }];"
+        "jsCode": "const query = $json.intentParams?.query || $json.inputText || '';\nconst sentences = $json.intentParams?.sentences || 3;\nconst wolframAppId = $env.WOLFRAM_ALPHA_APPID || '';\nconst serpApiKey = $env.SERPAPI_API_KEY || '';\n\nif (!query) {\n  return [{ json: { ...$json, responseText: '\u2757 Query required.', success: false } }];\n}\n\nreturn [{ json: { ...$json, query, sentences, wolframAppId, serpApiKey, _ctx: { intent: $json.intent, params: $json.intentParams, source: $json.source, userId: $json.userId, sessionId: $json.sessionId, inputText: $json.inputText } } }];"
       },
       "id": "kn-prepare-001",
       "name": "Prepare Query",
@@ -28,25 +26,12 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            {
-              "name": "appid",
-              "value": "={{ $json.wolframAppId }}"
-            },
-            {
-              "name": "i",
-              "value": "={{ $json.query }}"
-            },
-            {
-              "name": "units",
-              "value": "metric"
-            }
+            {"name": "appid", "value": "={{ $json.wolframAppId }}"},
+            {"name": "i", "value": "={{ $json.query }}"},
+            {"name": "units", "value": "metric"}
           ]
         },
-        "options": {
-          "timeout": 15000,
-          "retryOnFail": true,
-          "maxTries": 2
-        }
+        "options": {"timeout": 15000, "retryOnFail": true, "maxTries": 2, "continueOnFail": true}
       },
       "id": "kn-wolfram-001",
       "name": "Wolfram|Alpha",
@@ -56,60 +41,99 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "wolfram-check", "leftValue": "={{ $json.statusCode === 200 && $json.data && !String($json.data).includes('Wolfram|Alpha did not understand') }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "kn-if-wolfram-001",
+      "name": "Wolfram Has Result?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json._ctx || {};\nconst text = String($json.data || '').trim();\nreturn [{ json: { ...ctx, responseText: '\ud83e\udd16 Wolfram|Alpha: ' + text, success: true, source: 'wolfram' } }];"
+      },
+      "id": "kn-format-wolfram-001",
+      "name": "Format Wolfram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 0]
+    },
+    {
+      "parameters": {
         "method": "GET",
         "url": "https://en.wikipedia.org/w/api.php",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            {
-              "name": "action",
-              "value": "query"
-            },
-            {
-              "name": "list",
-              "value": "search"
-            },
-            {
-              "name": "srsearch",
-              "value": "={{ $json.query }}"
-            },
-            {
-              "name": "format",
-              "value": "json"
-            },
-            {
-              "name": "srlimit",
-              "value": "1"
-            }
+            {"name": "action", "value": "query"},
+            {"name": "list", "value": "search"},
+            {"name": "srsearch", "value": "={{ $json.query }}"},
+            {"name": "format", "value": "json"},
+            {"name": "srlimit", "value": "1"}
           ]
         },
-        "options": {
-          "timeout": 10000,
-          "retryOnFail": true,
-          "maxTries": 2
-        }
+        "options": {"timeout": 10000, "retryOnFail": true, "maxTries": 2, "continueOnFail": true}
       },
       "id": "kn-wiki-search-001",
       "name": "Wikipedia Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [820, 300]
+      "position": [1140, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "wiki-search-check", "leftValue": "={{ $json.statusCode === 200 && $json.data?.query?.search?.length > 0 }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "kn-if-wiki-search-001",
+      "name": "Wiki Search Has Result?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 200]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "https://en.wikipedia.org/api/rest_v1/page/summary/{{ $json.title }}",
-        "options": {
-          "timeout": 10000,
-          "retryOnFail": true,
-          "maxTries": 2
-        }
+        "url": "https://en.wikipedia.org/api/rest_v1/page/summary/{{ $json.data.query.search[0].title.replace(/ /g, '_') }}",
+        "options": {"timeout": 10000, "retryOnFail": true, "maxTries": 2, "continueOnFail": true}
       },
       "id": "kn-wiki-summary-001",
       "name": "Wikipedia Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1060, 300]
+      "position": [1460, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "wiki-summary-check", "leftValue": "={{ $json.statusCode === 200 && $json.data?.extract }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "kn-if-wiki-summary-001",
+      "name": "Wiki Summary Has Result?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1620, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json._ctx || {};\nconst extract = $json.data.extract;\nconst sentences = $json.sentences || 3;\nconst parts = extract.split(/(?<=[.!?])\\s+/).filter(Boolean);\nconst summary = parts.slice(0, sentences).join(' ');\nreturn [{ json: { ...ctx, responseText: '\ud83d\udcd6 Wikipedia: ' + summary, success: true, source: 'wikipedia' } }];"
+      },
+      "id": "kn-format-wiki-001",
+      "name": "Format Wikipedia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 0]
     },
     {
       "parameters": {
@@ -118,212 +142,105 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            {
-              "name": "q",
-              "value": "={{ $json.query }}"
-            },
-            {
-              "name": "api_key",
-              "value": "={{ $json.serpApiKey }}"
-            },
-            {
-              "name": "engine",
-              "value": "google"
-            },
-            {
-              "name": "num",
-              "value": "3"
-            }
+            {"name": "q", "value": "={{ $json.query }}"},
+            {"name": "api_key", "value": "={{ $json.serpApiKey }}"},
+            {"name": "engine", "value": "google"},
+            {"name": "num", "value": "3"}
           ]
         },
-        "options": {
-          "timeout": 15000,
-          "retryOnFail": true,
-          "maxTries": 2
-        }
+        "options": {"timeout": 15000, "retryOnFail": true, "maxTries": 2, "continueOnFail": true}
       },
       "id": "kn-serpapi-001",
       "name": "SerpAPI Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [820, 500]
+      "position": [1300, 400]
     },
     {
       "parameters": {
-        "jsCode": "const wolframResult = $json[\"Wolfram|Alpha\"];\nif (wolframResult && wolframResult.statusCode === 200 && wolframResult.data) {\n  const text = wolframResult.data.trim();\n  if (text && !text.includes('Wolfram|Alpha did not understand')) {\n    return [{ json: { ...$input.item.json, responseText: `\ud83e\udd16 Wolfram|Alpha: ${text}`, success: true, source: 'wolfram' } }];\n  }\n}\nreturn [$input.item];"
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "serp-check", "leftValue": "={{ $json.statusCode === 200 && $json.data && ($json.data.answer_box?.answer || $json.data.answer_box?.snippet || $json.data.organic_results?.[0]?.snippet) }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
       },
-      "id": "kn-check-wolfram-001",
-      "name": "Check Wolfram",
+      "id": "kn-if-serpapi-001",
+      "name": "SerpAPI Has Result?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json._ctx || {};\nconst data = $json.data || {};\nconst answer = data.answer_box?.answer || data.answer_box?.snippet;\nconst snippet = data.organic_results?.[0]?.snippet;\nconst text = answer || snippet || '';\nreturn [{ json: { ...ctx, responseText: '\ud83d\udd0d Web: ' + text, success: true, source: 'serpapi' } }];"
+      },
+      "id": "kn-format-serpapi-001",
+      "name": "Format SerpAPI",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 100]
+      "position": [1620, 500]
     },
     {
       "parameters": {
-        "jsCode": "const searchResult = $json[\"Wikipedia Search\"];\nif (searchResult && searchResult.statusCode === 200 && searchResult.data?.query?.search?.length > 0) {\n  const title = searchResult.data.query.search[0].title.replace(/ /g, '_');\n  return [{ json: { ...$input.item.json, wikiTitle: title } }];\n}\nreturn [{ json: { ...$input.item.json, wikiTitle: null } }];"
+        "jsCode": "const ctx = $json._ctx || {};\nreturn [{ json: { ...ctx, responseText: 'I couldn\\'t find information about that from any available source.', success: false, source: 'none' } }];"
       },
-      "id": "kn-check-wiki-search-001",
-      "name": "Check Wiki Search",
+      "id": "kn-no-answer-001",
+      "name": "No Answer Found",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 200]
+      "position": [1620, 600]
     },
     {
       "parameters": {
-        "jsCode": "const summaryResult = $json[\"Wikipedia Summary\"];\nif (summaryResult && summaryResult.statusCode === 200 && summaryResult.data?.extract) {\n  const extract = summaryResult.data.extract;\n  const sentences = $json.sentences || 3;\n  const sentenceRegex = /(?<=[.!?])\\s+/;\n  const parts = extract.split(sentenceRegex).filter(Boolean);\n  const summary = parts.slice(0, sentences).join(' ');\n  return [{ json: { ...$input.item.json, responseText: `\ud83d\udcd6 Wikipedia: ${summary}`, success: true, source: 'wikipedia' } }];\n}\nreturn [$input.item];"
-      },
-      "id": "kn-check-wiki-summary-001",
-      "name": "Check Wiki Summary",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1300, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const serpResult = $json[\"SerpAPI Search\"];\nif (serpResult && serpResult.statusCode === 200 && serpResult.data) {\n  const answer = serpResult.data.answer_box?.answer || serpResult.data.answer_box?.snippet;\n  const snippet = serpResult.data.organic_results?.[0]?.snippet;\n  const text = answer || snippet;\n  if (text) {\n    return [{ json: { ...$input.item.json, responseText: `\ud83d\udd0d Web: ${text}`, success: true, source: 'serpapi' } }];\n  }\n}\nreturn [{ json: { ...$input.item.json, responseText: '\u2753 No answer found from any source.', success: false } }];"
-      },
-      "id": "kn-check-serpapi-001",
-      "name": "Check SerpAPI",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1060, 500]
-    },
-    {
-      "parameters": {
-        "jsCode": "const hasAnswer = $json.responseText && $json.success;\nif (hasAnswer) {\n  return [{ json: { ...$input.item.json, finalResponse: $json.responseText, finalSuccess: $json.success } }];\n}\nreturn [$input.item];"
+        "jsCode": "if ($json.responseText) {\n  return [{ json: { ...$json } }];\n}\nreturn [];"
       },
       "id": "kn-final-001",
-      "name": "Final Result",
+      "name": "Final Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 500]
+      "position": [1940, 300]
     }
   ],
   "connections": {
-    "Input": {
+    "Input": {"main": [[{"node": "Prepare Query", "type": "main", "index": 0}]]},
+    "Prepare Query": {"main": [[{"node": "Wolfram|Alpha", "type": "main", "index": 0}]]},
+    "Wolfram|Alpha": {"main": [[{"node": "Wolfram Has Result?", "type": "main", "index": 0}]]},
+    "Wolfram Has Result?": {
       "main": [
-        [
-          {
-            "node": "Prepare Query",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{"node": "Format Wolfram", "type": "main", "index": 0}],
+        [{"node": "Wikipedia Search", "type": "main", "index": 0}]
       ]
     },
-    "Prepare Query": {
+    "Format Wolfram": {"main": [[{"node": "Final Output", "type": "main", "index": 0}]]},
+    "Wikipedia Search": {"main": [[{"node": "Wiki Search Has Result?", "type": "main", "index": 0}]]},
+    "Wiki Search Has Result?": {
       "main": [
-        [
-          {
-            "node": "Wolfram|Alpha",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Wikipedia Search",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "SerpAPI Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{"node": "Wikipedia Summary", "type": "main", "index": 0}],
+        [{"node": "SerpAPI Search", "type": "main", "index": 0}]
       ]
     },
-    "Wolfram|Alpha": {
+    "Wikipedia Summary": {"main": [[{"node": "Wiki Summary Has Result?", "type": "main", "index": 0}]]},
+    "Wiki Summary Has Result?": {
       "main": [
-        [
-          {
-            "node": "Check Wolfram",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{"node": "Format Wikipedia", "type": "main", "index": 0}],
+        [{"node": "SerpAPI Search", "type": "main", "index": 0}]
       ]
     },
-    "Wikipedia Search": {
+    "Format Wikipedia": {"main": [[{"node": "Final Output", "type": "main", "index": 0}]]},
+    "SerpAPI Search": {"main": [[{"node": "SerpAPI Has Result?", "type": "main", "index": 0}]]},
+    "SerpAPI Has Result?": {
       "main": [
-        [
-          {
-            "node": "Check Wiki Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{"node": "Format SerpAPI", "type": "main", "index": 0}],
+        [{"node": "No Answer Found", "type": "main", "index": 0}]
       ]
     },
-    "Check Wiki Search": {
-      "main": [
-        [
-          {
-            "node": "Wikipedia Summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wikipedia Summary": {
-      "main": [
-        [
-          {
-            "node": "Check Wiki Summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "SerpAPI Search": {
-      "main": [
-        [
-          {
-            "node": "Check SerpAPI",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Wolfram": {
-      "main": [
-        [
-          {
-            "node": "Final Result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Wiki Summary": {
-      "main": [
-        [
-          {
-            "node": "Final Result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check SerpAPI": {
-      "main": [
-        [
-          {
-            "node": "Final Result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Format SerpAPI": {"main": [[{"node": "Final Output", "type": "main", "index": 0}]]},
+    "No Answer Found": {"main": [[{"node": "Final Output", "type": "main", "index": 0}]]}
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
   },
   "staticData": null,
-  "tags": []
+  "tags": ["capability", "knowledge"]
 }

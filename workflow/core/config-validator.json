@@ -3,6 +3,18 @@
   "nodes": [
     {
       "parameters": {
+        "rule": {
+          "interval": 1440
+        }
+      },
+      "id": "cv-schedule",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [340, 100]
+    },
+    {
+      "parameters": {
         "jsCode": "return [$input.item];"
       },
       "id": "cv-input",
@@ -13,7 +25,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const required = [\n  'TELEGRAM_BOT_TOKEN',\n  'TELEGRAM_WEBHOOK_SECRET',\n  'OWNER_USER_ID',\n  'LLM_API_KEY',\n  'LLM_API_BASE',\n  'LLM_MODEL',\n  'GOOGLE_API_KEY',\n  'GOOGLE_ACCESS_TOKEN'\n];\n\nconst optional = [\n  'AUTH_MODE',\n  'RATE_LIMIT_PER_MINUTE',\n  'TELEGRAM_MAX_MESSAGE_LENGTH',\n  'LLM_PROVIDER',\n  'OLLAMA_API_BASE',\n  'OLLAMA_MODEL',\n  'OPENAI_API_KEY',\n  'OPENAI_API_BASE',\n  'OPENAI_MODEL',\n  'ANTHROPIC_API_KEY',\n  'ANTHROPIC_MODEL',\n  'MEMORY_PROVIDER',\n  'WOLFRAM_ALPHA_APPID',\n  'SERPAPI_API_KEY'\n];\n\nconst missing = required.filter(key => !$env[key]);\nconst present = required.filter(key => $env[key]);\n\nreturn [{ json: { valid: missing.length === 0, missing, present, optional: optional.filter(key => $env[key]) } }];"
+        "jsCode": "const required = [\n  'TELEGRAM_BOT_TOKEN',\n  'TELEGRAM_WEBHOOK_SECRET',\n  'OWNER_USER_ID',\n  'LLM_API_KEY',\n  'LLM_API_BASE',\n  'LLM_MODEL',\n  'GOOGLE_CLIENT_ID',\n  'GOOGLE_CLIENT_SECRET',\n  'GOOGLE_REFRESH_TOKEN'\n];\n\nconst optional = [\n  'AUTH_MODE',\n  'RATE_LIMIT_PER_MINUTE',\n  'TELEGRAM_MAX_MESSAGE_LENGTH',\n  'LLM_PROVIDER',\n  'OLLAMA_API_BASE',\n  'OLLAMA_MODEL',\n  'OPENAI_API_KEY',\n  'OPENAI_API_BASE',\n  'OPENAI_MODEL',\n  'ANTHROPIC_API_KEY',\n  'ANTHROPIC_MODEL',\n  'MEMORY_PROVIDER',\n  'WOLFRAM_ALPHA_APPID',\n  'SERPAPI_API_KEY',\n  'GROQ_API_KEY',\n  'SQLITE_MEMORY_URL',\n  'SQLITE_MEMORY_PATH',\n  'MAIL_AGENT_NAME',\n  'CALENDAR_AGENT_NAME',\n  'STORAGE_AGENT_NAME',\n  'CONTACTS_AGENT_NAME',\n  'DOCS_AGENT_NAME',\n  'SLIDES_AGENT_NAME',\n  'TASKS_AGENT_NAME',\n  'SHEETS_AGENT_NAME',\n  'KNOWLEDGE_AGENT_NAME',\n  'CHAT_AGENT_NAME'\n];\n\nconst missing = required.filter(key => !$env[key]);\n\nconst memoryProvider = ($env.MEMORY_PROVIDER || 'n8n-static').toLowerCase();\nif (memoryProvider !== 'n8n-static') {\n  if (memoryProvider === 'sqlite' && !$env.SQLITE_MEMORY_URL && !$env.SQLITE_MEMORY_PATH) {\n    missing.push('SQLITE_MEMORY_URL or SQLITE_MEMORY_PATH');\n  }\n}\n\nconst present = required.filter(key => $env[key]);\n\nreturn [{ json: { valid: missing.length === 0, missing, present, optional: optional.filter(key => $env[key]) } }];"
       },
       "id": "cv-validate",
       "name": "Validate Config",
@@ -37,7 +49,7 @@
     },
     {
       "parameters": {
-        "jsCode": "throw new Error('Missing required environment variables: ' + $json.missing.join(', '));"
+        "jsCode": "const missing = $json.missing || [];\nthrow new Error('JARVIS config error: Missing required env var(s): ' + missing.join(', ') + '. Check n8n Settings → Environment Variables.');"
       },
       "id": "cv-throw",
       "name": "Throw Error",
@@ -61,7 +73,10 @@
     "Validate Config": {"main": [[{"node": "Config Invalid?", "type": "main", "index": 0}]]},
     "Config Invalid?": {"main": [[{"node": "Throw Error", "type": "main", "index": 0}], [{"node": "Config Valid", "type": "main", "index": 0}]]}
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
   "staticData": null,
   "tags": ["core", "config"]
 }

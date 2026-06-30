@@ -33,8 +33,7 @@
     },
     {
       "parameters": {
-        "mode": "combine",
-        "combinationMode": "mergeByPosition"
+        "mode": "append"
       },
       "id": "merge-entries",
       "name": "Merge Entry Points",
@@ -44,33 +43,112 @@
     },
     {
       "parameters": {
-        "jsCode": "const update = $input.item.json;\nconst isTelegram = !!update.message;\nconst isWebsite = !!update.body;\n\nlet result;\nif (isTelegram) {\n  const msg = update.message || update.callback_query?.message;\n  const cbq = update.callback_query;\n  result = {\n    source: 'telegram',\n    userId: String(msg?.from?.id || 'unknown'),\n    sessionId: 'sess_' + String(msg?.chat?.id || '0') + '_' + Date.now(),\n    messageId: String(msg?.message_id || ''),\n    inputType: msg?.voice ? 'voice' : msg?.photo ? 'photo' : msg?.document ? 'document' : msg?.location ? 'location' : msg?.text ? 'text' : 'unknown',\n    inputText: msg?.text || msg?.caption || cbq?.data || '',\n    inputBinary: null,\n    metadata: {\n      chatId: String(msg?.chat?.id || ''),\n      replyEndpoint: null,\n      timestamp: new Date().toISOString(),\n      clientInfo: { firstName: msg?.from?.first_name, username: msg?.from?.username }\n    }\n  };\n} else if (isWebsite) {\n  const body = update.body || {};\n  result = {\n    source: 'website',\n    userId: 'default',\n    sessionId: body.session_id || 'sess_default_' + Date.now(),\n    messageId: body.message_id || '',\n    inputType: body.input_type || 'text',\n    inputText: body.text || body.message || '',\n    inputBinary: body.attachment || null,\n    metadata: {\n      chatId: null,\n      replyEndpoint: body.reply_url || null,\n      timestamp: new Date().toISOString(),\n      clientInfo: body.client_info || {}\n    }\n  };\n} else {\n  return [];\n}\n\nreturn [{ json: result }];"
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nif (sd.configValidated) {\n  return [{ json: { ...$json, configCheckSkipped: true } }];\n}\nreturn [{ json: { ...$json, configCheckSkipped: false } }];"
+      },
+      "id": "check-config-validated",
+      "name": "Check Config Validated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "needs-validation", "leftValue": "={{ $json.configCheckSkipped }}", "rightValue": "false", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "needs-config-check",
+      "name": "Needs Config Check?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [820, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Config Validator",
+        "continueOnFail": false
+      },
+      "id": "exec-config-validator",
+      "name": "Validate Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [960, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "is-invalid", "leftValue": "={{ $json.valid }}", "rightValue": "false", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "config-is-invalid",
+      "name": "Config Is Invalid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nsd.configValidated = true;\nreturn [{ json: { ...$json, configCheckSkipped: true } }];"
+      },
+      "id": "mark-config-validated",
+      "name": "Mark Config Validated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const missing = $json.missing || [];\nthrow new Error('JARVIS config error: Missing required env var(s): ' + missing.join(', ') + '. Check n8n Settings → Environment Variables.');"
+      },
+      "id": "throw-config-error",
+      "name": "Throw Config Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Basic sanitization — owner-only mode reduces risk but defense-in-depth.\nconst sanitizeInput = (text) => {\n  if (!text || typeof text !== 'string') return '';\n  return text\n    .slice(0, 2000)\n    .replace(/\\bIgnore (all )?previous instructions\\b/gi, '[filtered]')\n    .replace(/\\bSystem:\\s*You are\\b/gi, '[filtered]')\n    .replace(/\\bACT AS\\b/gi, '[filtered]')\n    .trim();\n};\n\nconst update = $input.item.json;\nconst isTelegram = !!update.message;\nconst isWebsite = !!update.body;\n\nconst traceId = () => {\n  const base = 'sess_' + Date.now();\n  const rand = Math.random().toString(36).slice(2, 8);\n  return base + '_' + rand;\n};\n\nlet result;\nif (isTelegram) {\n  const msg = update.message || update.callback_query?.message;\n  const cbq = update.callback_query;\n  result = {\n    source: 'telegram',\n    userId: String(msg?.from?.id || 'unknown'),\n    sessionId: traceId(),\n    messageId: String(msg?.message_id || ''),\n    inputType: msg?.voice ? 'voice' : msg?.photo ? 'photo' : msg?.document ? 'document' : msg?.location ? 'location' : msg?.text ? 'text' : 'unknown',\n    inputText: sanitizeInput(msg?.text || msg?.caption || cbq?.data || ''),\n    inputFileId: msg?.voice?.file_id || (msg?.photo ? msg?.photo[msg.photo.length - 1]?.file_id : null) || msg?.document?.file_id || null,\n    inputLocation: msg?.location ? { latitude: msg.location.latitude, longitude: msg.location.longitude } : null,\n    metadata: {\n      chatId: String(msg?.chat?.id || ''),\n      replyEndpoint: null,\n      timestamp: new Date().toISOString(),\n      clientInfo: { firstName: msg?.from?.first_name, username: msg?.from?.username }\n    }\n  };\n} else if (isWebsite) {\n  const body = update.body || {};\n  result = {\n    source: 'website',\n    userId: 'default',\n    sessionId: body.session_id || traceId(),\n    messageId: body.message_id || '',\n    inputType: body.input_type || 'text',\n    inputText: sanitizeInput(body.text || body.message || ''),\n    inputFileId: null,\n    inputLocation: body.location || null,\n    metadata: {\n      chatId: null,\n      replyEndpoint: body.reply_url || null,\n      timestamp: new Date().toISOString(),\n      clientInfo: body.client_info || {}\n    }\n  };\n} else {\n  return [];\n}\n\nreturn [{ json: result }];"
       },
       "id": "normalize-request",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [820, 300]
+      "position": [1520, 300]
     },
     {
       "parameters": {
-        "jsCode": "const OWNER_ID = String($env.OWNER_USER_ID || '');\nconst MODE = String($env.AUTH_MODE || 'open').toLowerCase();\nconst userId = String($json.userId || '');\n\nif ($env.TELEGRAM_WEBHOOK_SECRET) {\n  const trigger = $('Telegram Trigger').first();\n  const headers = trigger?.json?.headers || {};\n  const secret = headers['x-telegram-bot-api-secret-token'];\n  if (!secret || secret !== $env.TELEGRAM_WEBHOOK_SECRET) {\n    return [];\n  }\n}\n\nif (MODE === 'protected' && OWNER_ID && userId !== OWNER_ID) {\n  try {\n    await $helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage',\n      headers: { 'Content-Type': 'application/json' },\n      body: { chat_id: $json.metadata?.chatId, text: '\u26d4 Access denied.' },\n      timeout: 5000\n    });\n  } catch (e) {}\n  return [];\n}\n\nreturn [$input.item];"
+        "jsCode": "// Auth Gate: Validates owner identity and Telegram webhook secret.\n// Telegram Trigger: n8n validates the secret_token automatically when configured\n// in the node's 'Webhook URL' settings. No manual check needed for source='telegram'.\n// Webhook: For website/webhook requests, $request.headers are available.\n\nconst OWNER_ID = String($env.OWNER_USER_ID || '');\nconst MODE = String($env.AUTH_MODE || 'open').toLowerCase();\nconst userId = String($json.userId || '');\n\nif (MODE === 'protected' && OWNER_ID && userId !== OWNER_ID) {\n  try {\n    await $helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage',\n      headers: { 'Content-Type': 'application/json' },\n      body: { chat_id: $json.metadata?.chatId, text: '\u26d4 Access denied.' },\n      timeout: 5000\n    });\n  } catch (e) {}\n  return [];\n}\n\nreturn [$input.item];"
       },
       "id": "auth-gate",
       "name": "Auth Gate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 300]
+      "position": [1760, 300]
     },
     {
       "parameters": {
-        "jsCode": "const userId = String($json.userId || 'default');\nconst limit = parseInt($env.RATE_LIMIT_PER_MINUTE || '30', 10);\nconst WINDOW = 60_000;\nconst now = Date.now();\n\nconst sd = $getWorkflowStaticData('global');\nsd.rl = sd.rl || {};\nconst bucket = sd.rl[userId] || (sd.rl[userId] = []);\nwhile (bucket.length && (now - bucket[0]) > WINDOW) bucket.shift();\n\nif (bucket.length >= limit) {\n  return [];\n}\nbucket.push(now);\nreturn [{ json: { ...$json, startTime: now } }];"
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const configLevel = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[configLevel] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](\n      JSON.stringify({\n        timestamp: new Date().toISOString(),\n        level, traceId: $json.traceId || $json.sessionId || 'unknown',\n        workflow: 'entry', message, meta\n      })\n    );\n  }\n};\n\nconst userId = String($json.userId || 'default');\nconst limit = parseInt($env.RATE_LIMIT_PER_MINUTE || '30', 10);\nconst MIN_INTERVAL_MS = 100;\nconst WINDOW_MS = 60_000;\nconst now = Date.now();\n\nconst sd = $getWorkflowStaticData('global');\nif (!sd.rateLimits) sd.rateLimits = {};\n\nconst userTimestamps = (sd.rateLimits[userId] || [])\n  .filter(ts => now - ts < WINDOW_MS);\n\nif (userTimestamps.length >= limit) {\n  jarvisLog('warn', 'Rate limit exceeded', { userId, count: userTimestamps.length, limit });\n  throw new Error('RATE_LIMIT_EXCEEDED: ' + userTimestamps.length + '/' + limit + ' requests in last 60s');\n}\n\nif (userTimestamps.length > 0) {\n  const lastTs = userTimestamps[userTimestamps.length - 1];\n  if (now - lastTs < MIN_INTERVAL_MS) {\n    jarvisLog('warn', 'Minimum inter-request delay not met', { userId, elapsed: now - lastTs });\n    throw new Error('RATE_LIMIT_EXCEEDED: Too many rapid requests. Minimum 100ms between requests.');\n  }\n}\n\nuserTimestamps.push(now);\nsd.rateLimits[userId] = userTimestamps;\nreturn [{ json: { ...$json, startTime: now } }];"
       },
       "id": "rate-limit",
       "name": "Rate Limit",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 300]
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "JARVIS — Input Processor"
+      },
+      "id": "input-processor",
+      "name": "Input Processor",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1880, 300]
     },
     {
       "parameters": {
@@ -80,7 +158,7 @@
       "name": "Intent Classifier",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [1540, 200]
+      "position": [2240, 200]
     },
     {
       "parameters": {
@@ -90,7 +168,7 @@
       "name": "Capability Router",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [1780, 200]
+      "position": [2480, 200]
     },
     {
       "parameters": {
@@ -101,7 +179,7 @@
       "name": "Merge Results",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2020, 200]
+      "position": [2720, 200]
     },
     {
       "parameters": {
@@ -111,7 +189,7 @@
       "name": "Response Sender",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [2260, 100]
+      "position": [2960, 100]
     },
     {
       "parameters": {
@@ -122,21 +200,40 @@
       "name": "Memory Store",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [2260, 300]
+      "position": [2960, 300]
     }
   ],
   "connections": {
     "Telegram Trigger": {"main": [[{"node": "Merge Entry Points", "type": "main", "index": 0}]]},
     "Website Webhook": {"main": [[{"node": "Merge Entry Points", "type": "main", "index": 0}]]},
-    "Merge Entry Points": {"main": [[{"node": "Normalize Request", "type": "main", "index": 0}]]},
-    "Normalize Request": {"main": [[{"node": "Auth Gate", "type": "main", "index": 0}]]},
+    "Merge Entry Points": {"main": [[{"node": "Check Config Validated", "type": "main", "index": 0}]]},
+    "Check Config Validated": {"main": [[{"node": "Needs Config Check?", "type": "main", "index": 0}]]},
+    "Needs Config Check?": {
+      "main": [
+        [{"node": "Validate Config", "type": "main", "index": 0}],
+        [{"node": "Normalize Request", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate Config": {"main": [[{"node": "Config Is Invalid?", "type": "main", "index": 0}]]},
+    "Config Is Invalid?": {
+      "main": [
+        [{"node": "Throw Config Error", "type": "main", "index": 0}],
+        [{"node": "Mark Config Validated", "type": "main", "index": 0}]
+      ]
+    },
+    "Mark Config Validated": {"main": [[{"node": "Normalize Request", "type": "main", "index": 0}]]},
+    "Normalize Request": {"main": [[{"node": "Input Processor", "type": "main", "index": 0}]]},
+    "Input Processor": {"main": [[{"node": "Auth Gate", "type": "main", "index": 0}]]},
     "Auth Gate": {"main": [[{"node": "Rate Limit", "type": "main", "index": 0}]]},
     "Rate Limit": {"main": [[{"node": "Intent Classifier", "type": "main", "index": 0}]]},
     "Intent Classifier": {"main": [[{"node": "Capability Router", "type": "main", "index": 0}]]},
     "Capability Router": {"main": [[{"node": "Merge Results", "type": "main", "index": 0}]]},
     "Merge Results": {"main": [[{"node": "Response Sender", "type": "main", "index": 0}, {"node": "Memory Store", "type": "main", "index": 0}]]}
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
   "staticData": null,
   "tags": ["core", "entry"]
 }

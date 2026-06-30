@@ -1,0 +1,32 @@
+{
+  "name": "JARVIS — Input Processor",
+  "nodes": [
+    {
+      "parameters": {"jsCode": "return [$input.item];"},
+      "id": "ip-input",
+      "name": "Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.item.json;\nlet { inputType, inputText, inputFileId, inputLocation, metadata } = input;\n\nif (inputType === 'text') {\n  return [{ json: input }];\n}\n\nif (inputType === 'voice' && inputFileId) {\n  try {\n    const jarvisLog = (lvl, msg, meta = {}) => {\n      const lvls = { debug: 0, info: 1, warn: 2, error: 3 };\n      if (lvls[lvl] >= (lvls[($env.LOG_LEVEL || 'info').toLowerCase()] ?? 1)) {\n        const wf = 'input-processor';\n        console[lvl === 'error' ? 'error' : lvl === 'warn' ? 'warn' : 'log'](JSON.stringify({ timestamp: new Date().toISOString(), level: lvl, traceId: input.sessionId || 'unknown', workflow: wf, message: msg, meta }));\n      }\n    };\n    jarvisLog('info', 'Transcribing voice message', { fileId: inputFileId });\n\n    const fileRes = await $helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/getFile?file_id=' + encodeURIComponent(inputFileId),\n      timeout: 10000\n    });\n    const filePath = fileRes?.result?.file_path;\n    if (filePath) {\n      const audioBuf = await $helpers.httpRequest({\n        method: 'GET',\n        url: 'https://api.telegram.org/file/bot' + $env.TELEGRAM_BOT_TOKEN + '/' + filePath,\n        responseType: 'buffer',\n        timeout: 15000\n      });\n      const groqKey = $env.GROQ_API_KEY || $env.LLM_API_KEY;\n      if (groqKey && audioBuf) {\n        const whisperRes = await $helpers.httpRequest({\n          method: 'POST',\n          url: 'https://api.groq.com/openai/v1/audio/transcriptions',\n          headers: { 'Authorization': 'Bearer ' + groqKey },\n          formData: {\n            model: 'whisper-large-v3',\n            file: { value: audioBuf, options: { filename: 'voice.ogg', contentType: 'audio/ogg' } },\n            response_format: 'json'\n          },\n          timeout: 30000\n        });\n        if (whisperRes?.text) {\n          inputText = whisperRes.text;\n          inputType = 'text';\n          jarvisLog('info', 'Transcription succeeded', { length: inputText.length });\n        }\n      }\n    }\n  } catch (e) {\n    console.error('[input-processor] Voice transcription failed:', e.message);\n  }\n}\n\nif (inputType !== 'text') {\n  if (inputType === 'photo') {\n    inputText = '[User sent a photo — image analysis not yet supported]';\n    inputType = 'text';\n  } else if (inputType === 'document') {\n    inputText = '[User sent a document — document analysis not yet supported]';\n    inputType = 'text';\n  } else if (inputType === 'location' && inputLocation) {\n    inputText = 'My location is: ' + inputLocation.latitude + ', ' + inputLocation.longitude;\n    inputType = 'text';\n  } else if (inputType === 'voice') {\n    inputText = '[Voice message — transcription unavailable. Set GROQ_API_KEY for Whisper STT.]';\n    inputType = 'text';\n  } else {\n    inputText = '[Unknown input type — please send text]';\n    inputType = 'text';\n  }\n}\n\nreturn [{ json: { ...input, inputText, inputType, inputProcessed: true } }];"
+      },
+      "id": "ip-process",
+      "name": "Process Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 300]
+    }
+  ],
+  "connections": {
+    "Input": {"main": [[{"node": "Process Input", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
+  "staticData": null,
+  "tags": ["core", "input"]
+}

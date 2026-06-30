@@ -67,6 +67,30 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "tg-ok", "leftValue": "={{ $json.statusCode === 200 }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "rs-tg-ok",
+      "name": "Telegram OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1220, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jarvisLog = (level, message, meta = {}) => {\n  const levels = { debug: 0, info: 1, warn: 2, error: 3 };\n  const cl = ($env.LOG_LEVEL || 'info').toLowerCase();\n  if (levels[level] >= (levels[cl] ?? 1)) {\n    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify({ timestamp: new Date().toISOString(), level, traceId: $json.sessionId || 'unknown', workflow: 'response-sender', message, meta }));\n  }\n};\nconst sc = $json.statusCode || 0;\nconst ctx = $json._ctx || {};\nif (sc === 429) {\n  jarvisLog('warn', 'Telegram rate limit hit', { chatId: $json.metadata?.chatId });\n} else if (sc === 403) {\n  jarvisLog('warn', 'Bot blocked by user', { userId: ctx.userId, chatId: $json.metadata?.chatId });\n} else if (sc >= 400) {\n  jarvisLog('error', 'Telegram send failed', { statusCode: sc, chatId: $json.metadata?.chatId });\n}\nreturn [];"
+      },
+      "id": "rs-tg-error",
+      "name": "Handle Send Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 200]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "options": {},
         "responseBody": "={{ JSON.stringify({ success: true, response: $json.messageText, source: $json.source, version: '1.0.0' }) }}"
@@ -85,6 +109,13 @@
       "main": [
         [{"node": "Send to Telegram", "type": "main", "index": 0}],
         [{"node": "Is Website?", "type": "main", "index": 0}]
+      ]
+    },
+    "Send to Telegram": {"main": [[{"node": "Telegram OK?", "type": "main", "index": 0}]]},
+    "Telegram OK?": {
+      "main": [
+        [],
+        [{"node": "Handle Send Error", "type": "main", "index": 0}]
       ]
     },
     "Is Website?": {

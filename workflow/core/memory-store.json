@@ -18,12 +18,36 @@
       "position": [580, 200]
     },
     {
+      "parameters": {
+        "jsCode": "const intent = $json.intent || '';\nconst response = $json.responseText || '';\nconst inputText = $json.inputText || '';\nconst extractionEnabled = ($env.FACT_EXTRACTION_ENABLED || 'true').toLowerCase() === 'true';\n\nconst shouldExtract = extractionEnabled && (\n  intent === 'general_chat' ||\n  response.length > 200 ||\n  inputText.length > 10\n);\n\nreturn [{ json: { ...$json, shouldExtractFacts: shouldExtract } }];"
+      },
+      "id": "ms-should-extract",
+      "name": "Should Extract Facts?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"id": "extract-check", "leftValue": "={{ $json.shouldExtractFacts }}", "rightValue": "true", "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "ms-if-extract",
+      "name": "Extract Facts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 200]
+    },
+    {
       "parameters": {"workflowId": "JARVIS — LLM Adapter"},
       "id": "ms-extract-facts",
       "name": "Extract Facts (LLM)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [820, 200],
+      "position": [1140, 100],
       "continueOnFail": true
     },
     {
@@ -32,7 +56,7 @@
       "name": "Parse Facts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 200]
+      "position": [1320, 100]
     },
     {
       "parameters": {"workflowId": "JARVIS — Memory Adapter"},
@@ -40,16 +64,36 @@
       "name": "Save Facts",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [1300, 200]
+      "position": [1500, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, factsSkipped: true } }];"
+      },
+      "id": "ms-skip-facts",
+      "name": "Skip Fact Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 300]
     }
   ],
   "connections": {
     "Input": {"main": [[{"node": "Save Session", "type": "main", "index": 0}]]},
-    "Save Session": {"main": [[{"node": "Extract Facts (LLM)", "type": "main", "index": 0}]]},
+    "Save Session": {"main": [[{"node": "Should Extract Facts?", "type": "main", "index": 0}]]},
+    "Should Extract Facts?": {"main": [[{"node": "Extract Facts?", "type": "main", "index": 0}]]},
+    "Extract Facts?": {
+      "main": [
+        [{"node": "Extract Facts (LLM)", "type": "main", "index": 0}],
+        [{"node": "Skip Fact Extraction", "type": "main", "index": 0}]
+      ]
+    },
     "Extract Facts (LLM)": {"main": [[{"node": "Parse Facts", "type": "main", "index": 0}]]},
     "Parse Facts": {"main": [[{"node": "Save Facts", "type": "main", "index": 0}]]}
-  ],
-  "settings": {"executionOrder": "v1"},
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "JARVIS — Error Handler"
+  },
   "staticData": null,
   "tags": ["core", "memory"]
 }

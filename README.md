@@ -23,7 +23,7 @@ Build a personal AI assistant where:
 User Message
     │
     ▼
-Entry Workflow ─── Normalize → Auth → Rate Limit
+Entry Workflow ─── Normalize → Input Processor → Auth → Rate Limit
     │
     ▼
 Intent Classifier (LLM Adapter) ─── Classify intent + extract params
@@ -49,7 +49,7 @@ Memory Store ─── Save session → Extract facts → Save facts
 - **Intent Classification** — LLM-based (any provider) — 27 intents across 10 capabilities
 - **Capability Router** — Config-driven routing by intent prefix
 - **Replaceable LLM** — Groq (default), Ollama, OpenAI, Anthropic
-- **Replaceable Memory** — n8n-static (default), SQLite, PostgreSQL
+- **Replaceable Memory** — SQLite (default), n8n-static (fallback), PostgreSQL
 - **Response Channels** — Telegram, Webhook (website)
 - **Global Error Handling** — Structured logging with trace IDs
 - **Auth & Rate Limiting** — Owner-only mode, per-user rate limiting
@@ -99,7 +99,7 @@ workflow/
 │   ├── response-sender.json       # Response formatting + delivery
 │   ├── config-validator.json      # Env var validation
 │   ├── error-handler.json         # Global error handling
-│   └── logger.json                # Structured logging
+│   └── google-auth.json           # OAuth2 token refresh
 └── capabilities/                  # Capability agents
     ├── mail/gmail-agent.json
     ├── calendar/calendar-agent.json
@@ -119,10 +119,13 @@ workflow/
 
 ```
 ├── workflow/
-│   ├── core/           # 10 core orchestration workflows
+│   ├── core/           # 11 core orchestration workflows
 │   └── capabilities/   # 10 capability agent workflows
 ├── ARCHITECTURE.md     # Full architecture documentation
 ├── WORKFLOWS.md        # Complete workflow reference
+├── TESTING.md          # Testing guide & smoke test sequence
+├── CONTRIBUTING.md     # Development guidelines
+├── .env.example        # Environment variable reference
 ├── README.md           # This file
 └── LICENSE             # MIT License
 ```
@@ -144,23 +147,31 @@ workflow/
    cd JARVIS
    ```
 
-2. **Import workflows into n8n**
+2. **Start the SQLite Memory Server** (required for persistent memory)
+   ```bash
+   pip install flask
+   python scripts/sqlite-memory-server.py
+   ```
+   The server runs on `http://localhost:8710`. See [SQLite Memory Server](#sqlite-memory-server) for details.
+
+3. **Import workflows into n8n**
    - Open n8n → Workflows → Import
    - Import each JSON file from `workflow/core/` and `workflow/capabilities/`
    - Workflows are imported with their correct names (e.g., `JARVIS — Entry`)
 
-3. **Configure credentials in n8n**
+4. **Configure credentials in n8n**
    - **Telegram**: Create a bot via [@BotFather](https://t.me/BotFather), add Telegram credentials in n8n
-   - **Google**: Set up OAuth2 or API key credentials for Google APIs
+   - **Google**: Set up OAuth2 credentials. See [Google OAuth Setup](#google-oauth-setup) below.
    - **LLM**: Configure your preferred LLM provider (Groq, Ollama, OpenAI, Anthropic)
 
-4. **Set environment variables**
-   - Add all required variables in n8n → Settings → Environment Variables
-   - See [Configuration](#configuration) below
+5. **Set environment variables**
+   - Copy variables from `.env.example` into n8n → Settings → Environment Variables
+   - All required variables are marked; optional ones have defaults shown
+   - See [Configuration](#configuration) below for details
 
-5. **Activate the Entry workflow**
-   - Activate `JARVIS — Entry` in n8n
-   - Set up Telegram webhook to point to your n8n instance
+6. **Activate the Entry workflow**
+   - Activate only `JARVIS — Entry` in n8n (sub-workflows are called via `executeWorkflow` and don't need activation)
+   - Set up Telegram webhook to point to your n8n instance (see [Finding Your Webhook URL](#finding-your-webhook-url))
 
 ---
 
@@ -178,8 +189,9 @@ All configuration is via n8n environment variables.
 | `LLM_API_KEY` | API key for LLM provider |
 | `LLM_API_BASE` | LLM API base URL |
 | `LLM_MODEL` | LLM model name |
-| `GOOGLE_API_KEY` | Google API key |
-| `GOOGLE_ACCESS_TOKEN` | Google OAuth access token |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GOOGLE_REFRESH_TOKEN` | Google OAuth refresh token |
 
 ### Optional
 
@@ -193,7 +205,9 @@ All configuration is via n8n environment variables.
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `ANTHROPIC_MODEL` | `claude-3-haiku-20240307` | Anthropic model |
-| `MEMORY_PROVIDER` | `n8n-static` | n8n-static, sqlite, postgres |
+| `MEMORY_PROVIDER` | `sqlite` | sqlite, n8n-static, postgres |
+| `SQLITE_MEMORY_URL` | `http://localhost:8710` | SQLite memory server URL |
+| `SQLITE_MEMORY_PATH` | — | SQLite memory DB path |
 | `WOLFRAM_ALPHA_APPID` | — | WolframAlpha App ID |
 | `SERPAPI_API_KEY` | — | SerpAPI key |
 | `AUTH_MODE` | `protected` | open, protected |
@@ -213,7 +227,7 @@ All configuration is via n8n environment variables.
 6. **Response Sender** delivers the response back through the original channel
 7. **Memory Store** saves the session and extracts facts for future reference
 
-Every request gets a `traceId` for end-to-end debugging.
+Every request gets a unique `traceId` (format: `sess_<epoch>_<6char-random>`) for end-to-end debugging.
 
 ---
 
@@ -222,9 +236,10 @@ Every request gets a `traceId` for end-to-end debugging.
 - [ ] Additional mail providers (Outlook, IMAP)
 - [ ] Additional calendar providers (CalDAV, Outlook)
 - [ ] Additional storage providers (OneDrive, Dropbox)
-- [ ] Persistent memory (SQLite, PostgreSQL with pgvector)
+- [ ] Additional memory providers (PostgreSQL with pgvector)
 - [ ] Additional response channels (Discord, Slack)
-- [ ] OAuth token refresh for Google APIs
+- [x] OAuth token refresh for Google APIs
+- [x] Persistent memory (SQLite)
 - [ ] Web UI dashboard for configuration
 - [ ] Workflow testing framework
 - [ ] Docker Compose for one-click deployment
@@ -240,6 +255,120 @@ Contributions are welcome. Please open an issue or pull request on [GitHub](http
 ## License
 
 MIT — free to use, modify, and distribute. See [LICENSE](LICENSE).
+
+---
+
+## Google OAuth Setup
+
+JARVIS uses OAuth2 refresh tokens for Google API access. Static access tokens and API keys are no longer used for user data APIs.
+
+### Step 1: Create OAuth2 Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project or select existing
+3. Enable required APIs: Gmail, Calendar, Drive, People, Docs, Slides, Sheets, Tasks
+4. Go to **Credentials** → **Create Credentials** → **OAuth client ID**
+5. Choose **Desktop application** as application type
+6. Copy the **Client ID** and **Client Secret**
+
+### Step 2: Get a Refresh Token
+
+```bash
+# Set your credentials
+CLIENT_ID="your-client-id"
+CLIENT_SECRET="your-client-secret"
+
+# Generate the auth URL (open in browser)
+echo "https://accounts.google.com/o/oauth2/auth?client_id=$CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&response_type=code&scope=https://www.googleapis.com/auth/gmail.modify%20https://www.googleapis.com/auth/calendar%20https://www.googleapis.com/auth/drive%20https://www.googleapis.com/auth/contacts%20https://www.googleapis.com/auth/documents%20https://www.googleapis.com/auth/presentations%20https://www.googleapis.com/auth/spreadsheets%20https://www.googleapis.com/auth/tasks"
+
+# Exchange the authorization code for tokens
+curl -X POST https://oauth2.googleapis.com/token \
+  -d "client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET&code=AUTHORIZATION_CODE&redirect_uri=urn:ietf:wg:oauth:2.0:oob&grant_type=authorization_code"
+```
+
+Save the `refresh_token` from the response.
+
+### Step 3: Set Environment Variables
+
+```
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REFRESH_TOKEN=your-refresh-token
+```
+
+The `JARVIS — Google Auth` workflow automatically refreshes the access token using these credentials.
+
+---
+
+## Finding Your Webhook URL
+
+JARVIS exposes two webhook endpoints (hardcoded — update in `entry.json` if needed):
+
+| Endpoint | Path | Purpose |
+|---|---|---|
+| Telegram | `/webhook/jarvis-telegram` | Telegram bot updates (set via BotFather `setWebhook`) |
+| Website | `/webhook/jarvis-webhook-site` | Direct HTTP API access |
+
+**URL format:**
+```
+http(s)://YOUR_N8N_HOST:5678/webhook/jarvis-webhook-site
+```
+
+- For **local testing**, use [ngrok](https://ngrok.com) to expose your n8n instance:
+  ```bash
+  ngrok http 5678
+  # → Use the https URL as your n8n base URL
+  ```
+- For **production**, use your public n8n domain (reverse-proxied with HTTPS).
+- The webhook path is hardcoded in the Webhook node in `entry.json`. To change it, edit the `path` parameter in the node configuration and re-import.
+
+**Setup verification:**
+```bash
+curl -X POST https://YOUR_N8N_URL/webhook/jarvis-webhook-site \
+  -H "Content-Type: application/json" \
+  -d '{"text": "ping", "session_id": "setup-test"}'
+```
+Expected response: `{"responseText": "I'm JARVIS, your AI assistant. How can I help?", "success": true}`
+
+---
+
+## SQLite Memory Server
+
+The SQLite memory server provides persistent storage for sessions and facts.
+
+### Quick Start
+
+```bash
+pip install flask
+python scripts/sqlite-memory-server.py
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `POST` | `/sessions` | Save a session |
+| `GET` | `/sessions/<id>` | Get a session |
+| `POST` | `/facts` | Save facts |
+| `GET` | `/facts` | Get facts (filter by `user_id`, `category`) |
+
+### Configuration
+
+| Env Variable | Default | Description |
+|---|---|---|
+| `SQLITE_MEMORY_PATH` | `scripts/jarvis_memory.db` | Database file path |
+| `SQLITE_MEMORY_PORT` | `8710` | Server port |
+
+### Production Deployment
+
+```bash
+# Using nohup
+nohup python scripts/sqlite-memory-server.py > memory-server.log 2>&1 &
+
+# Using Docker (if you prefer)
+# Or use a systemd service for auto-restart
+```
 
 ---
 

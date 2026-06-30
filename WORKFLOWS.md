@@ -4,7 +4,7 @@ Complete reference for all n8n workflows in the JARVIS architecture.
 
 ---
 
-## Core Workflows (`workflow/core/`)
+## Core Workflows (`workflow/core/`) — 11 workflows
 
 ### 1. `entry.json` — Single Entry Point
 
@@ -101,15 +101,15 @@ knowledge_query
 |---|---|---|
 | Input | `code` | Pass-through |
 | Route to Capability | `switch` | Maps intent prefix → capability |
-| Mail Agent (Gmail) | `executeWorkflow` | `JARVIS 4.6 — Gmail Agent` |
-| Calendar Agent | `executeWorkflow` | `JARVIS 4.6 — Calendar Agent` |
-| Storage Agent (Drive) | `executeWorkflow` | `JARVIS 4.6 — Drive Agent` |
-| Contacts Agent | `executeWorkflow` | `JARVIS 4.6 — Contacts Agent` |
-| Docs Agent | `executeWorkflow` | `JARVIS 4.6 — Docs Agent` |
-| Slides Agent | `executeWorkflow` | `JARVIS 4.5 — Slides Agent` |
-| Tasks Agent | `executeWorkflow` | `JARVIS 4.6 — Tasks Agent` |
-| Sheets Agent | `executeWorkflow` | `JARVIS 4.6 — Sheets Agent` |
-| Knowledge Agent | `executeWorkflow` | `JARVIS 4.6 — Knowledge Agent` |
+| Mail Agent (Gmail) | `executeWorkflow` | `JARVIS — Gmail Agent` |
+| Calendar Agent | `executeWorkflow` | `JARVIS — Calendar Agent` |
+| Storage Agent (Drive) | `executeWorkflow` | `JARVIS — Drive Agent` |
+| Contacts Agent | `executeWorkflow` | `JARVIS — Contacts Agent` |
+| Docs Agent | `executeWorkflow` | `JARVIS — Docs Agent` |
+| Slides Agent | `executeWorkflow` | `JARVIS — Slides Agent` |
+| Tasks Agent | `executeWorkflow` | `JARVIS — Tasks Agent` |
+| Sheets Agent | `executeWorkflow` | `JARVIS — Sheets Agent` |
+| Knowledge Agent | `executeWorkflow` | `JARVIS — Knowledge Agent` |
 | General Chat | `executeWorkflow` | `JARVIS — General Chat` |
 
 **Routing Logic:**
@@ -181,8 +181,8 @@ knowledge_query
 **Providers (via `MEMORY_PROVIDER`):**
 | Provider | Status |
 |---|---|
-| `n8n-static` (default) | ✅ Implemented — uses n8n workflow static data |
-| `sqlite` | 🔄 Stub — returns not implemented error |
+| `sqlite` (default) | ✅ Implemented — persists to SQLite via local REST server |
+| `n8n-static` | ✅ Implemented — uses n8n workflow static data (non-persistent) |
 | `postgres` | 🔄 Stub — returns not implemented error |
 
 **Output:**
@@ -256,7 +256,7 @@ knowledge_query
 **Required Variables:**
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `OWNER_USER_ID`
 - `LLM_API_KEY`, `LLM_API_BASE`, `LLM_MODEL`
-- `GOOGLE_API_KEY`, `GOOGLE_ACCESS_TOKEN`
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`
 
 ---
 
@@ -280,31 +280,32 @@ knowledge_query
 
 ---
 
-### 10. `logger.json` — Structured Logging
+### 10. `google-auth.json` — Google OAuth Token Refresh
 
-**Purpose:** Consistent JSON logging with trace IDs.
+**Purpose:** Provides a fresh OAuth2 access token for all Google API calls.
 
-**Input:** `{ level, message, traceId, workflow, meta }`
+**Input:** Any payload (passed through unchanged)
 
 **Nodes:**
 | Node | Type | Purpose |
 |---|---|---|
 | Input | `code` | Pass-through |
-| Write Log | `code` | Outputs JSON to console if level >= `LOG_LEVEL` |
+| Get or Refresh Token | `code` | Checks cache; refreshes via OAuth if needed |
 
-**Log Levels:** `debug` (0), `info` (1), `warn` (2), `error` (3)
+**Caching:**
+- Token stored in n8n static data with expiry timestamp
+- Refreshes automatically when token is within 100 seconds of expiry
+- Uses `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` env vars
 
-**Log Entry:**
+**Output:**
 ```json
 {
-  "timestamp": "2026-06-30T12:00:00.000Z",
-  "level": "info",
-  "traceId": "sess_123_1700000000000",
-  "workflow": "gmail-agent",
-  "message": "Gmail search completed",
-  "meta": { "results": 5 }
+  "...original fields...": "...",
+  "accessToken": "ya29.a0AfH6S..."
 }
 ```
+
+**Called by:** All Google capability agents via `executeWorkflow` before making API calls.
 
 ---
 
@@ -313,42 +314,42 @@ knowledge_query
 ### Mail — `mail/gmail-agent.json`
 **Intents:** `gmail_search`, `gmail_read`, `gmail_send`, `gmail_delete`
 **Provider:** Gmail API (Google)
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Calendar — `calendar/calendar-agent.json`
 **Intents:** `calendar_list`, `calendar_create`, `calendar_delete`
 **Provider:** Google Calendar API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Storage — `storage/drive-agent.json`
 **Intents:** `drive_list`, `drive_search`, `drive_upload`, `drive_download`, `drive_delete`
 **Provider:** Google Drive API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Contacts — `contacts/contacts-agent.json`
 **Intents:** `contacts_list`, `contacts_search`, `contacts_create`
 **Provider:** Google People API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Docs — `docs/docs-agent.json`
 **Intents:** `docs_create`, `docs_read`, `docs_edit`
 **Provider:** Google Docs API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Slides — `slides/slides-agent.json`
 **Intents:** `slides_create`
 **Provider:** Google Slides API
-**Auth:** `GOOGLE_API_KEY`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Sheets — `sheets/sheets-agent.json`
 **Intents:** `sheets_read`, `sheets_write`, `sheets_create`
 **Provider:** Google Sheets API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Tasks — `tasks/tasks-agent.json`
 **Intents:** `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`
 **Provider:** Google Tasks API
-**Auth:** `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN`
+**Auth:** OAuth2 via `JARVIS — Google Auth`
 
 ### Knowledge — `knowledge/knowledge-agent.json`
 **Intents:** `knowledge_query`
@@ -430,16 +431,17 @@ Format Response (code)
 | Workflow | Required | Optional |
 |---|---|---|
 | `entry.json` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `OWNER_USER_ID` | `AUTH_MODE`, `RATE_LIMIT_PER_MINUTE` |
+| `input-processor.json` | — | `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN` (for audio download) |
 | `intent-classifier.json` | Via `llm-adapter.json` | — |
 | `llm-adapter.json` | `LLM_API_KEY`, `LLM_API_BASE`, `LLM_MODEL` | `LLM_PROVIDER`, `OLLAMA_*`, `OPENAI_*`, `ANTHROPIC_*` |
-| `memory-adapter.json` | — | `MEMORY_PROVIDER` |
+| `memory-adapter.json` | — | `MEMORY_PROVIDER`, `SQLITE_MEMORY_URL`, `SQLITE_MEMORY_PATH` |
 | `memory-store.json` | Via `llm-adapter.json` + `memory-adapter.json` | — |
 | `response-sender.json` | `TELEGRAM_BOT_TOKEN` | `TELEGRAM_MAX_MESSAGE_LENGTH` |
-| `config-validator.json` | All required vars | All optional vars |
+| `config-validator.json` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `OWNER_USER_ID`, `LLM_API_KEY`, `LLM_API_BASE`, `LLM_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | All optional vars |
 | `error-handler.json` | `TELEGRAM_BOT_TOKEN` | — |
-| `logger.json` | — | `LOG_LEVEL` |
-| Gmail/Calendar/Drive/Contacts/Docs/Sheets/Tasks | `GOOGLE_API_KEY` or `GOOGLE_ACCESS_TOKEN` | — |
-| Slides | `GOOGLE_API_KEY` | — |
+
+| Google Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | — |
+| Gmail/Calendar/Drive/Contacts/Docs/Slides/Sheets/Tasks | Via `JARVIS — Google Auth` | — |
 | Knowledge | `WOLFRAM_ALPHA_APPID`, `SERPAPI_API_KEY` | — |
 
 ---
@@ -455,12 +457,14 @@ Format Response (code)
 
 ### Test Entry Flow
 ```bash
-# Telegram: Send message to bot
-# Webhook: POST to /webhook/jarvis-webhook
-curl -X POST http://localhost:5678/webhook/jarvis-webhook \
+# Telegram: Send message to bot directly (no curl needed)
+# Webhook: POST to /webhook/jarvis-webhook-site
+curl -X POST http://localhost:5678/webhook/jarvis-webhook-site \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello", "session_id": "test-123"}'
 ```
+
+After import, verify all workflow references match by running the [Pre-Flight Checklist](TESTING.md#pre-flight-checklist) in TESTING.md.
 
 ### Verify Workflow References
 All `executeWorkflow` nodes reference workflows by **name**. The names must match what the workflow is imported as:
@@ -476,16 +480,17 @@ All `executeWorkflow` nodes reference workflows by **name**. The names must matc
 | `response-sender.json` | `JARVIS — Response Sender` |
 | `config-validator.json` | `JARVIS — Config Validator` |
 | `error-handler.json` | `JARVIS — Error Handler` |
-| `logger.json` | `JARVIS — Logger` |
-| `gmail-agent.json` | `JARVIS 4.6 — Gmail Agent` |
-| `calendar-agent.json` | `JARVIS 4.6 — Calendar Agent` |
-| `drive-agent.json` | `JARVIS 4.6 — Drive Agent` |
-| `contacts-agent.json` | `JARVIS 4.6 — Contacts Agent` |
-| `docs-agent.json` | `JARVIS 4.6 — Docs Agent` |
-| `slides-agent.json` | `JARVIS 4.5 — Slides Agent` |
-| `tasks-agent.json` | `JARVIS 4.6 — Tasks Agent` |
-| `sheets-agent.json` | `JARVIS 4.6 — Sheets Agent` |
-| `knowledge-agent.json` | `JARVIS 4.6 — Knowledge Agent` |
+
+| `google-auth.json` | `JARVIS — Google Auth` |
+| `gmail-agent.json` | `JARVIS — Gmail Agent` |
+| `calendar-agent.json` | `JARVIS — Calendar Agent` |
+| `drive-agent.json` | `JARVIS — Drive Agent` |
+| `contacts-agent.json` | `JARVIS — Contacts Agent` |
+| `docs-agent.json` | `JARVIS — Docs Agent` |
+| `slides-agent.json` | `JARVIS — Slides Agent` |
+| `tasks-agent.json` | `JARVIS — Tasks Agent` |
+| `sheets-agent.json` | `JARVIS — Sheets Agent` |
+| `knowledge-agent.json` | `JARVIS — Knowledge Agent` |
 | `general-chat.json` | `JARVIS — General Chat` |
 
 ---
@@ -493,7 +498,7 @@ All `executeWorkflow` nodes reference workflows by **name**. The names must matc
 ## Adding a New Workflow
 
 1. Create JSON in appropriate folder (`core/` or `capabilities/<capability>/`)
-2. Follow naming convention: `JARVIS — <Name>` for core, `JARVIS <version> — <Name>` for capabilities
+2. Follow naming convention: `JARVIS — <Name>` for all workflows. Use n8n Tags for versioning.
 3. Add to capability router if it's a capability agent
 4. Add intent to intent-classifier VALID_INTENTS if new intent
 5. Update this document
